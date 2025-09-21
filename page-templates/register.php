@@ -193,6 +193,11 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
     <!-- Force load custom register assets -->
     <link rel="stylesheet" href="<?php echo get_stylesheet_directory_uri(); ?>/assets/css/custom-register.css?v=<?php echo time(); ?>">
     <script src="<?php echo get_stylesheet_directory_uri(); ?>/assets/js/custom-register.js?v=<?php echo time(); ?>"></script>
+    <script src="<?php echo get_stylesheet_directory_uri(); ?>/assets/js/unified-auth.js?v=<?php echo time(); ?>"></script>
+    
+    <!-- API Configuration -->
+    <meta name="wp-nonce" content="<?php echo wp_create_nonce('wp_rest'); ?>">
+    <meta name="api-base-url" content="https://reports.laapak.com">
 </head>
 <body <?php body_class('custom-register-page'); ?>>
 
@@ -204,6 +209,12 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
                     <p>لديك حساب بالفعل؟ 
                         <a href="<?php echo home_url('/login/'); ?>" class="login-link-text">
                             سجل الدخول هنا
+                        </a>
+                    </p>
+                    <p class="mt-2">
+                        <a href="<?php echo home_url('/enhanced-account/'); ?>">
+                            <i class="fas fa-user-circle me-1"></i>
+                            عرض الحساب (للمستخدمين المسجلين)
                         </a>
                     </p>
                 </div>

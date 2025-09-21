@@ -90,6 +90,12 @@ $login_url = wp_login_url();
     <!-- Force load custom login assets -->
     <link rel="stylesheet" href="<?php echo get_stylesheet_directory_uri(); ?>/assets/css/custom-login.css?v=<?php echo time(); ?>">
     <script src="<?php echo get_stylesheet_directory_uri(); ?>/assets/js/custom-login.js?v=<?php echo time(); ?>"></script>
+    <script src="<?php echo get_stylesheet_directory_uri(); ?>/assets/js/unified-auth.js?v=<?php echo time(); ?>"></script>
+    
+    <!-- API Configuration -->
+    <meta name="wp-nonce" content="<?php echo wp_create_nonce('wp_rest'); ?>">
+    <meta name="laapak-api-nonce" content="<?php echo wp_create_nonce('laapak_api_nonce'); ?>">
+    <meta name="api-base-url" content="https://reports.laapak.com">
 </head>
 <body <?php body_class('custom-login-page'); ?>>
 
@@ -117,7 +123,7 @@ $login_url = wp_login_url();
                            id="user_login" 
                            class="form-input" 
                            value="<?php echo isset($_POST['log']) ? esc_attr($_POST['log']) : ''; ?>" 
-                           placeholder="أدخل بريدك الإلكتروني أو اسم المستخدم"
+                           placeholder="أدخل رقم هاتفك"
                            size="20" 
                            required>
                 </div>
@@ -162,6 +168,12 @@ $login_url = wp_login_url();
                     <p>ليس لديك حساب؟ 
                         <a href="<?php echo home_url('/register/'); ?>" class="register-link-text">
                             سجل هنا
+                        </a>
+                    </p>
+                    <p class="mt-2">
+                        <a href="<?php echo home_url('/enhanced-account/'); ?>">
+                            <i class="fas fa-user-circle me-1"></i>
+                            عرض الحساب (للمستخدمين المسجلين)
                         </a>
                     </p>
                 </div>
