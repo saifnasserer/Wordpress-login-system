@@ -1,0 +1,799 @@
+/**
+ * Custom Registration Page Styles
+ * Multi-step form with Arabic support and minimal design
+ */
+
+/* =============================================================================
+   RESET & BASE STYLES
+   ============================================================================= */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Force basic styles to ensure CSS is loading */
+html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+body.custom-register-page {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif !important;
+    background: #f8f9fa !important;
+    min-height: 100vh !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 20px !important;
+    padding-bottom: 80px !important; /* Space for fixed footer */
+    line-height: 1.6 !important;
+    direction: rtl !important;
+    text-align: right !important;
+}
+
+/* =============================================================================
+   REGISTER CONTAINER
+   ============================================================================= */
+
+.register-container {
+    width: 100% !important;
+    max-width: 600px !important;
+    margin: 0 auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.register-wrapper {
+    background: transparent !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    width: 100% !important;
+    padding: 0 !important;
+}
+
+
+/* =============================================================================
+   REGISTER HEADER
+   ============================================================================= */
+
+.register-header {
+    text-align: center;
+    padding: 0 0 30px;
+    background: transparent;
+    width: 100%;
+}
+
+.register-title {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin: 0 0 10px;
+    text-shadow: none;
+}
+
+.register-subtitle {
+    font-size: 16px;
+    color: #6b7280;
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* =============================================================================
+   FORM STYLES
+   ============================================================================= */
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #1a1a1a;
+    font-size: 14px;
+}
+
+.step-description {
+    font-size: 14px;
+    color: #6b7280;
+    margin-bottom: 25px;
+    line-height: 1.5;
+}
+
+/* =============================================================================
+   FORM ELEMENTS
+   ============================================================================= */
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin-bottom: 20px;
+}
+
+.form-label {
+    font-weight: 500;
+    color: #1a1a1a;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+/* WordPress Override - Force our styles */
+.form-input,
+input.form-input,
+input[type="text"].form-input,
+input[type="email"].form-input,
+input[type="password"].form-input,
+input[type="tel"].form-input,
+.form-select,
+select.form-select,
+.form-textarea,
+textarea.form-textarea {
+    padding: 16px !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 8px !important;
+    font-size: 16px !important;
+    transition: all 0.2s ease !important;
+    background: #ffffff !important;
+    color: #1a1a1a !important;
+    width: 100% !important;
+    text-align: right !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    outline: none !important;
+    font-family: inherit !important;
+    line-height: normal !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+}
+
+.form-input:focus,
+input.form-input:focus,
+input[type="text"].form-input:focus,
+input[type="email"].form-input:focus,
+input[type="password"].form-input:focus,
+input[type="tel"].form-input:focus,
+.form-select:focus,
+select.form-select:focus,
+.form-textarea:focus,
+textarea.form-textarea:focus {
+    outline: none !important;
+    border-color: #1a1a1a !important;
+    box-shadow: none !important;
+    transform: none !important;
+    background: #ffffff !important;
+}
+
+.form-input::placeholder,
+input.form-input::placeholder,
+input[type="text"].form-input::placeholder,
+input[type="email"].form-input::placeholder,
+input[type="password"].form-input::placeholder,
+input[type="tel"].form-input::placeholder {
+    color: #9ca3af !important;
+    opacity: 1 !important;
+}
+
+.form-textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* =============================================================================
+   RADIO GROUP
+   ============================================================================= */
+
+.radio-group {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 14px;
+    color: #1a1a1a;
+    user-select: none;
+    gap: 8px;
+}
+
+.radio-label input[type="radio"] {
+    display: none;
+}
+
+.radio-custom {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #d1d5db;
+    border-radius: 50%;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.radio-label input[type="radio"]:checked + .radio-custom {
+    border-color: #1a1a1a;
+}
+
+.radio-label input[type="radio"]:checked + .radio-custom::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #1a1a1a;
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* =============================================================================
+   DATE INPUTS
+   ============================================================================= */
+
+.date-inputs {
+    display: flex;
+    gap: 10px;
+}
+
+.date-inputs .form-select {
+    flex: 1;
+}
+
+/* =============================================================================
+   CHECKBOX
+   ============================================================================= */
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 14px;
+    color: #1a1a1a;
+    user-select: none;
+    gap: 8px;
+}
+
+.checkbox-label input[type="checkbox"] {
+    display: none;
+}
+
+.checkmark {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #d1d5db;
+    border-radius: 4px;
+    position: relative;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.checkbox-label input[type="checkbox"]:checked + .checkmark {
+    background: #1a1a1a;
+    border-color: #1a1a1a;
+}
+
+.checkbox-label input[type="checkbox"]:checked + .checkmark::after {
+    content: '✓';
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+/* =============================================================================
+   FORM SUBMIT
+   ============================================================================= */
+
+.form-submit {
+    margin-top: 30px;
+    text-align: center;
+}
+
+/* WordPress Button Override */
+.submit-button,
+input.submit-button,
+input[type="submit"].submit-button,
+button.submit-button {
+    background: #0eaf54 !important;
+    color: #ffffff !important;
+    border: none !important;
+    padding: 18px 36px !important;
+    border-radius: 50px !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+    min-width: 200px !important;
+    height: 56px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    outline: none !important;
+    font-family: inherit !important;
+    line-height: normal !important;
+    text-decoration: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    touch-action: manipulation !important;
+}
+
+.submit-button:hover,
+input.submit-button:hover,
+input[type="submit"].submit-button:hover,
+button.submit-button:hover {
+    background: #0a8a42 !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* =============================================================================
+   REGISTER FOOTER
+   ============================================================================= */
+
+.register-footer {
+    padding: 24px 0 0;
+    text-align: center;
+    background: transparent;
+    width: 100%;
+}
+
+.login-link {
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.login-link-text {
+    color: #1a1a1a;
+    text-decoration: underline;
+    font-weight: 500;
+}
+
+/* =============================================================================
+   ERROR & SUCCESS MESSAGES
+   ============================================================================= */
+
+.register-error {
+    background: #fee;
+    border: 1px solid #fcc;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    color: #c33;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.register-success {
+    background: #efe;
+    border: 1px solid #cfc;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    color: #363;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* =============================================================================
+   FOOTER STYLES
+   ============================================================================= */
+
+.login-page-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid #f0f0f0;
+    padding: 20px 0;
+    z-index: 100;
+}
+
+.footer-content {
+    max-width: 400px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    gap: 20px;
+}
+
+.footer-logo-image {
+    height: 24px;
+    width: auto;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.footer-links {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+.footer-link {
+    color: #6b7280;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 400;
+    transition: color 0.2s ease;
+}
+
+.footer-link:hover {
+    color: #1a1a1a;
+}
+
+/* =============================================================================
+   RESPONSIVE DESIGN
+   ============================================================================= */
+
+@media (max-width: 768px) {
+    body.custom-register-page {
+        padding: 15px;
+    }
+    
+    .register-container {
+        max-width: 100%;
+    }
+    
+    s
+    
+    .register-header {
+        padding: 0 0 20px;
+    }
+    
+    .register-title {
+        font-size: 28px;
+    }
+    
+    .form-group {
+        margin-bottom: 18px;
+    }
+    
+    .form-input,
+    .form-select,
+    .form-textarea {
+        padding: 16px;
+        font-size: 16px;
+    }
+    
+    .submit-button {
+        padding: 16px;
+        font-size: 16px;
+        min-height: 52px;
+        border-radius: 12px;
+        width: 100%;
+        font-weight: 600;
+    }
+    
+    .radio-group {
+        gap: 15px;
+    }
+    
+    .date-inputs {
+        flex-direction: column;
+        gap: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    body.custom-register-page {
+        padding: 8px;
+        overflow-x: hidden;
+    }
+    
+    .register-container {
+        max-width: 100%;
+        width: 100%;
+        min-height: calc(100vh - 16px);
+        justify-content: flex-start;
+        padding: 20px 16px;
+        margin: 0;
+    }
+    
+    .register-wrapper {
+        width: 100%;
+        max-width: 100%;
+        padding: 20px 16px;
+        margin: 0;
+    }
+    
+    .register-title {
+        font-size: 24px;
+    }
+    
+    .register-subtitle {
+        font-size: 14px;
+    }
+    
+    .progress-steps {
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+    
+    .step-circle {
+        width: 30px;
+        height: 30px;
+        font-size: 12px;
+    }
+    
+    .step-text {
+        font-size: 10px;
+    }
+    
+    .step-header {
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+    
+    .step-number {
+        width: 30px;
+        height: 30px;
+        font-size: 12px;
+    }
+    
+    .step-title {
+        font-size: 16px;
+    }
+    
+    .form-input,
+    .form-select,
+    .form-textarea {
+        padding: 16px;
+        font-size: 16px;
+        min-height: 52px;
+        border-radius: 12px;
+        width: 100%;
+        box-sizing: border-box;
+        border: 2px solid #e5e7eb;
+    }
+    
+    .form-input:focus,
+    .form-select:focus,
+    .form-textarea:focus {
+        border-color: #0eaf54;
+        box-shadow: 0 0 0 3px rgba(14, 175, 84, 0.1);
+    }
+    
+    .nav-button {
+        padding: 12px 20px;
+        font-size: 16px;
+        min-width: 80px;
+    }
+    
+    .radio-group {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .form-navigation {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .nav-button {
+        width: 100%;
+    }
+}
+
+@media (max-width: 360px) {
+    body.custom-register-page {
+        padding: 4px;
+        overflow-x: hidden;
+    }
+    
+    .register-container {
+        padding: 16px 12px;
+        min-height: calc(100vh - 8px);
+    }
+    
+    .register-wrapper {
+        padding: 16px 12px;
+    }
+    
+    .register-title {
+        font-size: 22px;
+        line-height: 1.1;
+        font-weight: 600;
+    }
+    
+    .form-input,
+    .form-select,
+    .form-textarea {
+        padding: 14px;
+        font-size: 16px;
+        min-height: 48px;
+        border-radius: 10px;
+    }
+    
+    .submit-button {
+        padding: 14px;
+        font-size: 16px;
+        min-height: 48px;
+        border-radius: 10px;
+        width: 100%;
+        font-weight: 600;
+    }
+    
+    .register-page-footer {
+        padding: 16px 12px;
+        margin-top: 30px;
+    }
+    
+    .footer-logo-image {
+        max-width: 100px;
+    }
+    
+    .footer-link {
+        font-size: 12px;
+    }
+    
+    .step-circle {
+        width: 28px;
+        height: 28px;
+        font-size: 11px;
+    }
+    
+    .step-number {
+        width: 28px;
+        height: 28px;
+        font-size: 11px;
+    }
+    
+    .step-title {
+        font-size: 15px;
+    }
+    
+    .form-input,
+    .form-select,
+    .form-textarea {
+        padding: 16px;
+        font-size: 16px;
+    }
+    
+    .nav-button {
+        padding: 10px 16px;
+        font-size: 16px;
+    }
+}
+
+/* =============================================================================
+   ACCESSIBILITY
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Focus indicators for keyboard navigation */
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus,
+.nav-button:focus,
+.radio-label:focus,
+.checkbox-label:focus {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .register-wrapper {
+        border: 2px solid #000;
+    }
+    
+    .form-input,
+    .form-select,
+    .form-textarea {
+        border-color: #000;
+    }
+    
+    .nav-button {
+        background: #000;
+        color: #fff;
+    }
+}
+
+/* =============================================================================
+   PRINT STYLES
+   ============================================================================= */
+
+@media (max-width: 768px) {
+    body.custom-register-page {
+        padding-bottom: 100px; /* More space on mobile */
+    }
+    
+    .login-page-footer {
+        padding: 15px 0;
+    }
+    
+    .footer-content {
+        padding: 0 15px;
+        gap: 15px;
+    }
+    
+    .footer-logo-image {
+        height: 20px;
+    }
+    
+    .footer-links {
+        gap: 12px;
+    }
+    
+    .footer-link {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 480px) {
+    body.custom-register-page {
+        padding-bottom: 90px;
+    }
+    
+    .login-page-footer {
+        padding: 15px 0;
+    }
+    
+    .footer-content {
+        padding: 0 15px;
+        gap: 10px;
+    }
+    
+    .footer-logo-image {
+        height: 20px;
+    }
+    
+    .footer-links {
+        gap: 10px;
+    }
+    
+    .footer-link {
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 360px) {
+    .footer-links {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .footer-link {
+        font-size: 9px;
+    }
+}
+
+@media print {
+    .register-container {
+        display: none;
+    }
+    
+    .login-page-footer {
+        display: none;
+    }
+}
