@@ -20,6 +20,7 @@ if (!is_user_logged_in()) {
     exit;
 }
 
+
 // Handle form submissions
 $update_success = '';
 $update_error = '';
@@ -154,7 +155,7 @@ if (class_exists('WC_Subscriptions')) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="<?php echo get_stylesheet_directory_uri(); ?>/client-portal/css/custom-client.css?v=<?php echo time(); ?>">
+    <link rel="stylesheet" href="<?php echo get_stylesheet_directory_uri(); ?>/assets/css/custom-client.css?v=<?php echo time(); ?>">
     
     <!-- Theme color for browser -->
     <meta name="theme-color" content="#0a3622">
@@ -162,14 +163,31 @@ if (class_exists('WC_Subscriptions')) {
     <!-- API Configuration -->
     <meta name="wp-nonce" content="<?php echo wp_create_nonce('wp_rest'); ?>">
     <meta name="user-id" content="<?php echo $current_user->ID; ?>">
-    <meta name="api-base-url" content="https://reports.laapak.com">
-    <meta name="client-token" content="">
+    <meta name="api-base-url" content="https://reports.laapak.com/api/external">
+    <meta name="client-token" content="<?php 
+        // Generate client token for logged-in users
+        if (is_user_logged_in()) {
+            $user_id = get_current_user_id();
+            $token_data = array(
+                'user_id' => $user_id,
+                'timestamp' => time(),
+                'domain' => $_SERVER['HTTP_HOST'] ?? 'localhost'
+            );
+            $token_string = base64_encode(json_encode($token_data));
+            $signature = hash_hmac('sha256', $token_string, wp_salt('auth'));
+            echo $token_string . '.' . $signature;
+        }
+    ?>">
     <script>
-        // Set client token if available in localStorage
+        // Set client token if available in localStorage or generate new one
         document.addEventListener('DOMContentLoaded', function() {
-            const clientToken = localStorage.getItem('clientToken') || sessionStorage.getItem('clientToken');
-            if (clientToken) {
-                document.querySelector('meta[name="client-token"]').content = clientToken;
+            let clientToken = localStorage.getItem('clientToken') || sessionStorage.getItem('clientToken');
+            if (!clientToken) {
+                // Get token from meta tag
+                clientToken = document.querySelector('meta[name="client-token"]').content;
+                if (clientToken) {
+                    localStorage.setItem('clientToken', clientToken);
+                }
             }
         });
     </script>
@@ -323,10 +341,6 @@ if (class_exists('WC_Subscriptions')) {
                                 <p class="text-muted mb-0">يمكنك متابعة تفاصيل الصيانة والضمان والفواتير والطلبات من هنا.</p>
                             </div>
                             <div class="d-flex gap-2">
-                                <a href="<?php echo home_url('/login/'); ?>" class="btn btn-outline-secondary btn-sm">
-                                    <i class="fas fa-edit me-1"></i>
-                                    تعديل الحساب
-                                </a>
                                 <a href="<?php echo wp_logout_url(home_url('/login/')); ?>" class="btn btn-outline-danger">
                                     <i class="fas fa-sign-out-alt me-2"></i>
                                     تسجيل الخروج
@@ -343,8 +357,13 @@ if (class_exists('WC_Subscriptions')) {
             <div class="col-12">
                 <ul class="nav client-nav shadow-sm bg-white" id="clientTabs" role="tablist">
                     <li class="nav-item">
-                        <a class="nav-link active" id="reports-tab" data-bs-toggle="tab" data-bs-target="#reports" role="tab">
-                            <i class="fas fa-laptop-medical me-2"></i> تقارير الصيانة
+                        <a class="nav-link active" id="orders-tab" data-bs-toggle="tab" data-bs-target="#orders" role="tab">
+                            <i class="fas fa-shopping-cart me-2"></i> الطلبات
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" id="reports-tab" data-bs-toggle="tab" data-bs-target="#reports" role="tab">
+                            <i class="fas fa-laptop-medical me-2"></i> تقارير لابك
                         </a>
                     </li>
                     <li class="nav-item">
@@ -360,11 +379,6 @@ if (class_exists('WC_Subscriptions')) {
                     <li class="nav-item">
                         <a class="nav-link" id="invoices-tab" data-bs-toggle="tab" data-bs-target="#invoices" role="tab">
                             <i class="fas fa-dollar-sign me-2"></i> الفواتير
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" id="orders-tab" data-bs-toggle="tab" data-bs-target="#orders" role="tab">
-                            <i class="fas fa-shopping-cart me-2"></i> الطلبات
                         </a>
                     </li>
                     <?php if (!empty($subscriptions)): ?>
@@ -386,7 +400,7 @@ if (class_exists('WC_Subscriptions')) {
         <!-- Tab Content -->
         <div class="tab-content" id="clientTabContent">
             <!-- Reports Tab -->
-            <div class="tab-pane fade show active" id="reports" role="tabpanel">
+            <div class="tab-pane fade" id="reports" role="tabpanel">
                 <div class="row" id="reportsList">
                     <!-- Loading indicator -->
                     <div class="col-12 text-center py-5" id="reportsLoading">
@@ -407,37 +421,55 @@ if (class_exists('WC_Subscriptions')) {
                 <div class="row mb-4">
                     <div class="col-12">
                         <div class="card border-0 shadow-sm">
-                            <div class="card-body">
-                                <h5 class="card-title"><i class="fas fa-info-circle text-primary me-2"></i> معلومات الضمان</h5>
-                                <p class="card-text">تقدم <?php bloginfo('name'); ?> ثلاثة أنواع من الضمانات لعملائها:</p>
+                            <div class="card-body p-4">
+                                <h5 class="card-title mb-3"><i class="fas fa-info-circle text-primary me-2"></i> معلومات الضمان</h5>
+                                <p class="card-text text-muted mb-4">تقدم <?php bloginfo('name'); ?> ثلاثة أنواع من الضمانات لعملائها:</p>
                                 <div class="row">
                                     <div class="col-md-4 mb-3">
-                                        <div class="card h-100 border-success border-start border-5">
-                                            <div class="card-body">
-                                                <h6 class="card-title text-success">
-                                                    <i class="fas fa-cog me-2"></i> ضمان عيوب الصناعة
-                                                </h6>
-                                                <p class="card-text">ضمان لمدة 6 أشهر ضد عيوب الصناعة منذ تاريخ إنشاء التقرير</p>
+                                        <div class="card h-100 border-0 shadow-sm">
+                                            <div class="card-body p-4">
+                                                <div class="d-flex align-items-center mb-3">
+                                                    <div class="bg-success text-white rounded-circle p-2 me-3">
+                                                        <i class="fas fa-cog"></i>
+                                                    </div>
+                                                    <h6 class="card-title text-success mb-0">ضمان عيوب الصناعة</h6>
+                                                </div>
+                                                <p class="card-text text-muted small">ضمان لمدة 6 أشهر ضد عيوب الصناعة منذ تاريخ إنشاء التقرير</p>
+                                                <div class="mt-3">
+                                                    <span class="badge bg-success rounded-pill px-3">6 أشهر</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                     <div class="col-md-4 mb-3">
-                                        <div class="card h-100 border-warning border-start border-5">
-                                            <div class="card-body">
-                                                <h6 class="card-title text-warning">
-                                                    <i class="fas fa-exchange-alt me-2"></i> ضمان الاستبدال
-                                                </h6>
-                                                <p class="card-text">ضمان استبدال لمدة 14 يوم من تاريخ استلام الجهاز</p>
+                                        <div class="card h-100 border-0 shadow-sm">
+                                            <div class="card-body p-4">
+                                                <div class="d-flex align-items-center mb-3">
+                                                    <div class="bg-warning text-white rounded-circle p-2 me-3">
+                                                        <i class="fas fa-exchange-alt"></i>
+                                                    </div>
+                                                    <h6 class="card-title text-warning mb-0">ضمان الاستبدال</h6>
+                                                </div>
+                                                <p class="card-text text-muted small">ضمان استبدال لمدة 14 يوم من تاريخ استلام الجهاز</p>
+                                                <div class="mt-3">
+                                                    <span class="badge bg-warning rounded-pill px-3">14 يوم</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                     <div class="col-md-4 mb-3">
-                                        <div class="card h-100 border-info border-start border-5">
-                                            <div class="card-body">
-                                                <h6 class="card-title text-info">
-                                                    <i class="fas fa-tools me-2"></i> ضمان الصيانة الدورية
-                                                </h6>
-                                                <p class="card-text">ضمان صيانة دورية لمدة سنة كاملة (مرة كل 6 أشهر)</p>
+                                        <div class="card h-100 border-0 shadow-sm">
+                                            <div class="card-body p-4">
+                                                <div class="d-flex align-items-center mb-3">
+                                                    <div class="bg-info text-white rounded-circle p-2 me-3">
+                                                        <i class="fas fa-tools"></i>
+                                                    </div>
+                                                    <h6 class="card-title text-info mb-0">ضمان الصيانة الدورية</h6>
+                                                </div>
+                                                <p class="card-text text-muted small">ضمان صيانة دورية لمدة سنة كاملة (مرة كل 6 أشهر)</p>
+                                                <div class="mt-3">
+                                                    <span class="badge bg-info rounded-pill px-3">سنة كاملة</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -577,24 +609,24 @@ if (class_exists('WC_Subscriptions')) {
             </div>
 
             <!-- Orders Tab (WooCommerce) -->
-            <div class="tab-pane fade" id="orders" role="tabpanel">
+            <div class="tab-pane fade show active" id="orders" role="tabpanel">
                 <div class="row" id="ordersList">
                     <?php if (!empty($orders)): ?>
                         <?php foreach ($orders as $order): ?>
                             <div class="col-md-6 col-lg-4 mb-4">
-                                <div class="card report-card shadow-sm">
-                                    <div class="card-header bg-info text-white">
-                                        <h6 class="card-title mb-0">
-                                            <i class="fas fa-shopping-cart me-2"></i>
-                                            طلب #<?php echo $order->get_order_number(); ?>
-                                        </h6>
-                                    </div>
-                                    <div class="card-body">
+                                <div class="card h-100 border-0 shadow-sm">
+                                    <div class="card-body p-4">
+                                        <div class="d-flex align-items-center mb-3">
+                                            <div class="bg-primary text-white rounded-circle p-2 me-3">
+                                                <i class="fas fa-shopping-cart"></i>
+                                            </div>
+                                            <h6 class="card-title text-primary mb-0">طلب #<?php echo $order->get_order_number(); ?></h6>
+                                        </div>
                                         <h6 class="card-title"><?php echo $order->get_formatted_order_total(); ?></h6>
-                                        <p class="card-text text-muted">التاريخ: <?php echo $order->get_date_created()->date('Y/m/d'); ?></p>
-                                        <p class="card-text text-muted">العنوان: <?php echo $order->get_formatted_billing_address(); ?></p>
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <span class="order-badge order-<?php echo $order->get_status(); ?>">
+                                        <p class="card-text text-muted small">التاريخ: <?php echo $order->get_date_created()->date('Y/m/d'); ?></p>
+                                        <p class="card-text text-muted small">العنوان: <?php echo $order->get_formatted_billing_address(); ?></p>
+                                        <div class="d-flex justify-content-between align-items-center mt-3">
+                                            <span class="badge bg-<?php echo $order->get_status() === 'completed' ? 'success' : ($order->get_status() === 'processing' ? 'warning' : 'info'); ?> rounded-pill px-3">
                                                 <?php echo wc_get_order_status_name($order->get_status()); ?>
                                             </span>
                                             <a href="<?php echo $order->get_view_order_url(); ?>" class="btn btn-outline-primary btn-sm">عرض الطلب</a>
