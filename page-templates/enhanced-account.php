@@ -162,34 +162,27 @@ if (class_exists('WC_Subscriptions')) {
     
     <!-- API Configuration -->
     <meta name="wp-nonce" content="<?php echo wp_create_nonce('wp_rest'); ?>">
-    <meta name="user-id" content="<?php echo $current_user->ID; ?>">
-    <meta name="api-base-url" content="https://reports.laapak.com/api/external">
-    <meta name="client-token" content="<?php 
-        // Generate client token for logged-in users
-        if (is_user_logged_in()) {
-            $user_id = get_current_user_id();
-            $token_data = array(
-                'user_id' => $user_id,
-                'timestamp' => time(),
-                'domain' => $_SERVER['HTTP_HOST'] ?? 'localhost'
-            );
-            $token_string = base64_encode(json_encode($token_data));
-            $signature = hash_hmac('sha256', $token_string, wp_salt('auth'));
-            echo $token_string . '.' . $signature;
-        }
-    ?>">
+    <meta name="api-base-url" content="https://reports.laapak.com">
+    <meta name="client-token" content="<?php echo esc_attr(get_user_meta($current_user->ID, 'laapak_client_token', true)); ?>">
     <script>
-        // Set client token if available in localStorage or generate new one
-        document.addEventListener('DOMContentLoaded', function() {
-            let clientToken = localStorage.getItem('clientToken') || sessionStorage.getItem('clientToken');
-            if (!clientToken) {
-                // Get token from meta tag
-                clientToken = document.querySelector('meta[name="client-token"]').content;
-                if (clientToken) {
-                    localStorage.setItem('clientToken', clientToken);
-                }
+        // Check if custom token is available from login
+        const customToken = document.querySelector('meta[name="client-token"]')?.content;
+        if (customToken && customToken.trim() !== '') {
+            console.log('✅ Custom token from login is available');
+            console.log('🔍 Token preview:', customToken.substring(0, 50) + '...');
+            
+            // Try to extract client ID for reference
+            try {
+                const payload = JSON.parse(atob(customToken.split('.')[0]));
+                console.log('🔍 Extracted client ID:', payload.user_id);
+                console.log('⚠️ CORS Issue: Cannot use x-client-id header');
+                console.log('🔍 Will use API key authentication only');
+            } catch (e) {
+                console.log('⚠️ Could not extract client ID - will use API key only');
             }
-        });
+        } else {
+            console.log('⚠️ No custom token found - will use API key only');
+        }
     </script>
 
     <style>
@@ -307,29 +300,7 @@ if (class_exists('WC_Subscriptions')) {
 
     <!-- Main Content -->
     <div class="container-fluid py-4" style="min-height: 100vh;">
-        <!-- Navigation Breadcrumb -->
-        <div class="row mb-3">
-            <div class="col-12">
-                <nav aria-label="breadcrumb">
-                    <ol class="breadcrumb">
-                        <li class="breadcrumb-item">
-                            <a href="<?php echo home_url(); ?>" class="text-decoration-none">
-                                <i class="fas fa-home me-1"></i> الرئيسية
-                            </a>
-                        </li>
-                        <li class="breadcrumb-item">
-                            <a href="<?php echo home_url('/login/'); ?>" class="text-decoration-none">
-                                <i class="fas fa-sign-in-alt me-1"></i> تسجيل الدخول
-                            </a>
-                        </li>
-                        <li class="breadcrumb-item active" aria-current="page">
-                            <i class="fas fa-user-circle me-1"></i> حسابي
-                        </li>
-                    </ol>
-                </nav>
-            </div>
-        </div>
-
+        
         <!-- Welcome Message -->
         <div class="row mb-4">
             <div class="col-12">

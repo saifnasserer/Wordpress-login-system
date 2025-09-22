@@ -22,8 +22,19 @@ if (is_user_logged_in()) {
 
 // Handle login errors
 $login_error = '';
-if (isset($_GET['login']) && $_GET['login'] == 'failed') {
-    $login_error = 'Invalid username or password. Please try again.';
+$login_error_type = '';
+
+if (isset($_GET['login'])) {
+        if ($_GET['login'] == 'failed') {
+            $login_error = 'رقم الهاتف أو كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى.';
+            $login_error_type = 'failed';
+        } elseif ($_GET['login'] == 'empty') {
+            $login_error = 'يرجى إدخال جميع البيانات المطلوبة.';
+            $login_error_type = 'empty';
+        } elseif ($_GET['login'] == 'invalid_nonce') {
+            $login_error = 'فشل التحقق من الأمان. يرجى المحاولة مرة أخرى.';
+            $login_error_type = 'invalid_nonce';
+        }
 }
 
 // Get the login URL
@@ -107,22 +118,22 @@ $login_url = wp_login_url();
 
         <div class="login-form-container">
             <?php if ($login_error): ?>
-                <div class="login-error">
-                    <span class="error-icon">⚠️</span>
-                    <span class="error-message">اسم المستخدم أو كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى.</span>
+                <div class="login-error alert alert-danger" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <span class="error-message"><?php echo esc_html($login_error); ?></span>
                 </div>
             <?php endif; ?>
 
-            <form name="loginform" id="loginform" action="<?php echo esc_url($login_url); ?>" method="post" class="custom-login-form">
+            <form name="loginform" id="loginform" action="<?php echo esc_url(home_url('/login/')); ?>" method="post" class="custom-login-form">
                 <?php wp_nonce_field('login_nonce', 'login_nonce_field'); ?>
                 
                 <div class="form-group">
                     <!-- <label for="user_login" class="form-label">البريد الإلكتروني أو اسم المستخدم</label> -->
                     <input type="text" 
-                           name="log" 
+                           name="user_login" 
                            id="user_login" 
                            class="form-input" 
-                           value="<?php echo isset($_POST['log']) ? esc_attr($_POST['log']) : ''; ?>" 
+                           value="<?php echo isset($_POST['user_login']) ? esc_attr($_POST['user_login']) : ''; ?>" 
                            placeholder="أدخل رقم هاتفك"
                            size="20" 
                            required>
@@ -131,7 +142,7 @@ $login_url = wp_login_url();
                 <div class="form-group">
                     <!-- <label for="user_pass" class="form-label">كلمة المرور</label> -->
                     <input type="password" 
-                           name="pwd" 
+                           name="user_pass" 
                            id="user_pass" 
                            class="form-input" 
                            placeholder="أدخل كلمة المرور"
@@ -168,12 +179,6 @@ $login_url = wp_login_url();
                     <p>ليس لديك حساب؟ 
                         <a href="<?php echo home_url('/register/'); ?>" class="register-link-text">
                             سجل هنا
-                        </a>
-                    </p>
-                    <p class="mt-2">
-                        <a href="<?php echo home_url('/enhanced-account/'); ?>">
-                            <i class="fas fa-user-circle me-1"></i>
-                            عرض الحساب (للمستخدمين المسجلين)
                         </a>
                     </p>
                 </div>

@@ -23,13 +23,17 @@ if (is_user_logged_in()) {
 // Handle registration errors
 $registration_error = '';
 $registration_success = '';
+$field_errors = array();
 
 if (isset($_GET['registration'])) {
     if ($_GET['registration'] == 'success') {
-        $registration_success = 'Registration successful! Please check your email to activate your account.';
+        $registration_success = 'تم إنشاء الحساب بنجاح! يمكنك الآن تسجيل الدخول.';
     } elseif ($_GET['registration'] == 'error') {
-        $error_message = isset($_GET['message']) ? $_GET['message'] : 'Registration failed. Please try again.';
+        $error_message = isset($_GET['message']) ? $_GET['message'] : 'فشل في إنشاء الحساب. يرجى المحاولة مرة أخرى.';
         $registration_error = $error_message;
+    } elseif ($_GET['registration'] == 'validation_error') {
+        $registration_error = 'يرجى تصحيح الأخطاء التالية:';
+        $field_errors = isset($_GET['errors']) ? explode(',', $_GET['errors']) : array();
     }
 }
 
@@ -72,29 +76,59 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
             $username = 'user_' . time();
         }
     
-    // Basic validation
+    // Enhanced validation
     $errors = array();
+    $field_errors = array();
     
+    // Full name validation
     if (empty($full_name)) {
         $errors[] = 'الاسم الكامل مطلوب';
+        $field_errors['full_name'] = 'الاسم الكامل مطلوب';
+    } elseif (strlen($full_name) < 2) {
+        $errors[] = 'الاسم الكامل يجب أن يكون حرفين على الأقل';
+        $field_errors['full_name'] = 'الاسم الكامل يجب أن يكون حرفين على الأقل';
     }
     
+    // Phone validation
     if (empty($phone)) {
         $errors[] = 'رقم الهاتف مطلوب';
+        $field_errors['phone'] = 'رقم الهاتف مطلوب';
+    } elseif (!preg_match('/^[\d\s\-\+\(\)]+$/', $phone)) {
+        $errors[] = 'رقم الهاتف غير صحيح';
+        $field_errors['phone'] = 'رقم الهاتف غير صحيح';
+    } elseif (strlen(str_replace([' ', '-', '+', '(', ')'], '', $phone)) < 10) {
+        $errors[] = 'رقم الهاتف يجب أن يكون 10 أرقام على الأقل';
+        $field_errors['phone'] = 'رقم الهاتف يجب أن يكون 10 أرقام على الأقل';
     }
     
+    // Email validation
     if (empty($email)) {
         $errors[] = 'البريد الإلكتروني مطلوب';
+        $field_errors['user_email'] = 'البريد الإلكتروني مطلوب';
     } elseif (!is_email($email)) {
         $errors[] = 'البريد الإلكتروني غير صحيح';
+        $field_errors['user_email'] = 'البريد الإلكتروني غير صحيح';
     } elseif (email_exists($email)) {
         $errors[] = 'البريد الإلكتروني موجود بالفعل';
+        $field_errors['user_email'] = 'البريد الإلكتروني موجود بالفعل';
     }
     
+    // Password validation
     if (empty($password)) {
         $errors[] = 'كلمة المرور مطلوبة';
+        $field_errors['user_pass'] = 'كلمة المرور مطلوبة';
     } elseif (strlen($password) < 6) {
         $errors[] = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+        $field_errors['user_pass'] = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+    } elseif (!preg_match('/^(?=.*[a-zA-Z])(?=.*\d)/', $password)) {
+        $errors[] = 'كلمة المرور يجب أن تحتوي على حروف وأرقام';
+        $field_errors['user_pass'] = 'كلمة المرور يجب أن تحتوي على حروف وأرقام';
+    }
+    
+    // Terms agreement validation
+    if (!isset($_POST['terms_agreement'])) {
+        $errors[] = 'يجب الموافقة على شروط الخدمة وسياسة الخصوصية';
+        $field_errors['terms_agreement'] = 'يجب الموافقة على شروط الخدمة وسياسة الخصوصية';
     }
     
     // If no errors, create user
@@ -110,6 +144,16 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
             update_user_meta($user_id, 'last_name', $last_name);
             update_user_meta($user_id, 'phone', $phone);
             
+            // Register user in external API
+            $api_result = register_user_in_laapak_api($user_id, $first_name, $last_name, $email, $phone);
+            
+            if ($api_result['success']) {
+                error_log('User registered successfully in external API');
+            } else {
+                error_log('Failed to register user in external API: ' . $api_result['message']);
+                // Continue with local registration even if API fails
+            }
+            
             // Auto-login the user
             wp_set_current_user($user_id);
             wp_set_auth_cookie($user_id, true); // Remember user
@@ -117,8 +161,8 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
             // Send welcome email
             wp_new_user_notification($user_id, null, 'user');
             
-            // Redirect to home page or dashboard
-            wp_redirect(home_url());
+            // Redirect to enhanced account page
+            wp_redirect(home_url('/enhanced-account/'));
             exit;
         } else {
             // Show detailed error for debugging
@@ -127,6 +171,8 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
             $registration_error = 'فشل في إنشاء الحساب: ' . $error_message;
         }
     } else {
+        // Store field errors in session for display
+        $_SESSION['registration_field_errors'] = $field_errors;
         $registration_error = implode('، ', $errors);
     }
     }
@@ -211,12 +257,6 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
                             سجل الدخول هنا
                         </a>
                     </p>
-                    <p class="mt-2">
-                        <a href="<?php echo home_url('/enhanced-account/'); ?>">
-                            <i class="fas fa-user-circle me-1"></i>
-                            عرض الحساب (للمستخدمين المسجلين)
-                        </a>
-                    </p>
                 </div>
         </div>
 
@@ -244,10 +284,13 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
                     <input type="text" 
                            name="full_name" 
                            id="full_name" 
-                           class="form-input" 
+                           class="form-input <?php echo isset($field_errors['full_name']) ? 'is-invalid' : ''; ?>" 
                            placeholder="أدخل اسمك الكامل"
                            value="<?php echo isset($_POST['full_name']) ? esc_attr($_POST['full_name']) : ''; ?>" 
                            required>
+                    <?php if (isset($field_errors['full_name'])): ?>
+                        <div class="invalid-feedback"><?php echo esc_html($field_errors['full_name']); ?></div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="form-group">
@@ -255,10 +298,13 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
                     <input type="email" 
                            name="user_email" 
                            id="user_email" 
-                           class="form-input" 
+                           class="form-input <?php echo isset($field_errors['user_email']) ? 'is-invalid' : ''; ?>" 
                            placeholder="أدخل بريدك الإلكتروني"
                            value="<?php echo isset($_POST['user_email']) ? esc_attr($_POST['user_email']) : ''; ?>" 
                            required>
+                    <?php if (isset($field_errors['user_email'])): ?>
+                        <div class="invalid-feedback"><?php echo esc_html($field_errors['user_email']); ?></div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="form-group">
@@ -266,10 +312,13 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
                     <input type="tel" 
                            name="phone" 
                            id="phone" 
-                           class="form-input" 
+                           class="form-input <?php echo isset($field_errors['phone']) ? 'is-invalid' : ''; ?>" 
                            placeholder="أدخل رقم هاتفك"
                            value="<?php echo isset($_POST['phone']) ? esc_attr($_POST['phone']) : ''; ?>" 
                            required>
+                    <?php if (isset($field_errors['phone'])): ?>
+                        <div class="invalid-feedback"><?php echo esc_html($field_errors['phone']); ?></div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="form-group">
@@ -277,9 +326,12 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
                     <input type="password" 
                            name="user_pass" 
                            id="user_pass" 
-                           class="form-input" 
+                           class="form-input <?php echo isset($field_errors['user_pass']) ? 'is-invalid' : ''; ?>" 
                            placeholder="أدخل كلمة المرور"
                            required>
+                    <?php if (isset($field_errors['user_pass'])): ?>
+                        <div class="invalid-feedback"><?php echo esc_html($field_errors['user_pass']); ?></div>
+                    <?php endif; ?>
                 </div>
 
 
@@ -289,6 +341,9 @@ if (isset($_POST['wp-submit']) && $_POST['wp-submit'] == 'إنشاء الحسا�
                         <span class="checkmark"></span>
                         أوافق على <a href="<?php echo home_url('/terms/'); ?>" target="_blank">شروط الخدمة</a> و <a href="<?php echo home_url('/privacy/'); ?>" target="_blank">سياسة الخصوصية</a>
                     </label>
+                    <?php if (isset($field_errors['terms_agreement'])): ?>
+                        <div class="text-danger small mt-1"><?php echo esc_html($field_errors['terms_agreement']); ?></div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="form-submit">
