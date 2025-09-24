@@ -7,6 +7,29 @@ class EnhancedAccount {
     constructor() {
         this.wpNonce = document.querySelector('meta[name="wp-nonce"]')?.content || '';
         this.currentUser = null;
+        this.apiBaseUrl = document.querySelector('meta[name="api-base-url"]')?.content || 'https://reports.laapak.com';
+        this.clientToken = document.querySelector('meta[name="client-token"]')?.content || '';
+        
+        // Reports data cache
+        this.allReports = [];
+        this.filteredReports = [];
+        this.currentPage = 1;
+        this.reportsPerPage = 10;
+        this.totalReports = 0;
+        
+        // Performance optimization: Caching system
+        this.cache = {
+            reports: null,
+            invoices: null,
+            warranty: null,
+            maintenance: null,
+            orders: null,
+            subscriptions: null,
+            profile: null
+        };
+        this.cacheTimestamps = {};
+        this.cacheTimeout = 5 * 60 * 1000; // 5 minutes cache timeout
+        this.isInitialLoad = true;
         
         this.init();
     }
@@ -16,6 +39,114 @@ class EnhancedAccount {
         this.setupEventListeners();
         this.loadUserData();
         this.initializeTabs();
+        
+        // Preload critical data in background for better performance
+        this.preloadCriticalData();
+    }
+
+    // Preload critical data in background
+    async preloadCriticalData() {
+        console.log('🚀 Preloading critical data...');
+        
+        // Preload reports and invoices in parallel (most commonly accessed)
+        const preloadPromises = [
+            this.preloadData('reports'),
+            this.preloadData('invoices')
+        ];
+        
+        try {
+            await Promise.allSettled(preloadPromises);
+            console.log('✅ Critical data preloaded');
+        } catch (error) {
+            console.warn('⚠️ Some preload requests failed:', error);
+        }
+    }
+
+    // Preload data without displaying it
+    async preloadData(type) {
+        const startTime = performance.now();
+        
+        try {
+            let endpoint = '';
+            switch (type) {
+                case 'reports':
+                    endpoint = '/wp-json/laapak/v1/client/reports?limit=50&sortBy=created_at&sortOrder=DESC';
+                    break;
+                case 'invoices':
+                    endpoint = '/wp-json/laapak/v1/client/invoices?limit=50';
+                    break;
+                case 'warranty':
+                    endpoint = '/wp-json/laapak/v1/client/warranty';
+                    break;
+                case 'maintenance':
+                    endpoint = '/wp-json/laapak/v1/client/maintenance';
+                    break;
+                default:
+                    return;
+            }
+
+            const response = await fetch(endpoint, {
+                method: 'GET',
+                headers: {
+                    'X-WP-Nonce': this.wpNonce,
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'same-origin'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.setCachedData(type, data);
+                
+                const endTime = performance.now();
+                const loadTime = Math.round(endTime - startTime);
+                console.log(`📦 Preloaded ${type} data in ${loadTime}ms`);
+            }
+        } catch (error) {
+            const endTime = performance.now();
+            const loadTime = Math.round(endTime - startTime);
+            console.warn(`⚠️ Failed to preload ${type} in ${loadTime}ms:`, error);
+        }
+    }
+
+    // Performance optimization: Cache helper functions
+    isCacheValid(key) {
+        if (!this.cacheTimestamps[key]) return false;
+        return (Date.now() - this.cacheTimestamps[key]) < this.cacheTimeout;
+    }
+
+    getCachedData(key) {
+        if (this.isCacheValid(key)) {
+            console.log(`📦 Using cached data for ${key}`);
+            return this.cache[key];
+        }
+        return null;
+    }
+
+    setCachedData(key, data) {
+        this.cache[key] = data;
+        this.cacheTimestamps[key] = Date.now();
+        console.log(`💾 Cached data for ${key}`);
+    }
+
+    clearCache(key = null) {
+        if (key) {
+            this.cache[key] = null;
+            delete this.cacheTimestamps[key];
+            console.log(`🗑️ Cleared cache for ${key}`);
+        } else {
+            this.cache = {
+                reports: null,
+                invoices: null,
+                warranty: null,
+                maintenance: null,
+                orders: null,
+                subscriptions: null,
+                profile: null
+            };
+            this.cacheTimestamps = {};
+            console.log('🗑️ Cleared all cache');
+        }
     }
 
     setupEventListeners() {
@@ -42,6 +173,50 @@ class EnhancedAccount {
             passwordForm.addEventListener('submit', (e) => {
                 this.handlePasswordChange(e);
             });
+        }
+
+        // Cache refresh button
+        const refreshButton = document.querySelector('[data-action="refresh-cache"]');
+        if (refreshButton) {
+            refreshButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.refreshAllData();
+            });
+        }
+    }
+
+    // Refresh all cached data
+    async refreshAllData() {
+        console.log('🔄 Refreshing all cached data...');
+        this.clearCache();
+        
+        // Show loading indicator
+        const refreshButton = document.querySelector('[data-action="refresh-cache"]');
+        if (refreshButton) {
+            const originalText = refreshButton.textContent;
+            refreshButton.textContent = 'جاري التحديث...';
+            refreshButton.disabled = true;
+            
+            try {
+                // Reload current tab data
+                const activeTab = document.querySelector('.nav-link.active');
+                if (activeTab) {
+                    const targetTab = activeTab.getAttribute('data-bs-target');
+                    this.handleTabSwitch(targetTab);
+                }
+                
+                // Preload other data
+                await this.preloadCriticalData();
+                
+                setTimeout(() => {
+                    refreshButton.textContent = originalText;
+                    refreshButton.disabled = false;
+                }, 1000);
+            } catch (error) {
+                refreshButton.textContent = originalText;
+                refreshButton.disabled = false;
+                console.error('❌ Error refreshing data:', error);
+            }
         }
     }
 
@@ -71,11 +246,16 @@ class EnhancedAccount {
                 this.loadProfileData();
                 break;
             case '#reports':
+                this.loadReports();
+                break;
             case '#warranty':
+                this.loadWarranty();
+                break;
             case '#maintenance':
+                this.loadMaintenance();
+                break;
             case '#invoices':
-                // These tabs are handled by PHP/WordPress - no JavaScript needed
-                console.log('Tab handled by server-side rendering');
+                this.loadInvoices();
                 break;
         }
     }
@@ -482,6 +662,781 @@ class EnhancedAccount {
     }
 
 
+    // =============================================================================
+    // REPORTS FUNCTIONALITY
+    // =============================================================================
+
+    async loadReports() {
+        console.log('📊 Loading reports...');
+        
+        const reportsContainer = document.getElementById('reportsList');
+        if (!reportsContainer) return;
+
+        // Check cache first
+        const cachedData = this.getCachedData('reports');
+        if (cachedData) {
+            console.log('📦 Using cached reports data');
+            this.allReports = cachedData;
+            this.filteredReports = [...cachedData];
+            this.totalReports = cachedData.length;
+            this.displayReports(cachedData, reportsContainer);
+            this.setupReportsSearch();
+            return;
+        }
+
+        try {
+            // Show loading state
+            this.showLoadingState(reportsContainer, 'جاري تحميل التقارير...');
+
+            // Use the new API endpoint that uses client ID
+            const response = await fetch('/wp-json/laapak/v1/client/reports?limit=50&sortBy=created_at&sortOrder=DESC', {
+                method: 'GET',
+                headers: {
+                    'X-WP-Nonce': this.wpNonce,
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'same-origin'
+            });
+
+            console.log('📊 Reports API Response Status:', response.status);
+
+            if (response.ok) {
+                const reports = await response.json();
+                console.log('✅ Reports loaded:', reports);
+                console.log('📊 Number of reports:', reports.length);
+                
+                // Cache the data
+                this.setCachedData('reports', reports);
+                
+                this.allReports = reports;
+                this.filteredReports = [...reports];
+                this.totalReports = reports.length;
+                this.displayReports(reports, reportsContainer);
+            } else {
+                const errorData = await response.json();
+                console.error('❌ Reports API Error:', errorData);
+                
+                if (response.status === 400 && errorData.code === 'no_client_id') {
+                    this.showErrorMessage(reportsContainer, 'يرجى تسجيل الدخول مرة أخرى للحصول على تقاريرك');
+                } else {
+                    this.showErrorMessage(reportsContainer, 'فشل في تحميل التقارير. يرجى المحاولة لاحقاً');
+                }
+            }
+            
+        } catch (error) {
+            console.error('❌ Error loading reports:', error);
+            this.showReportsFallback(reportsContainer);
+        }
+    }
+
+    async loadReportsFromDirectAPI(container) {
+        // This method is no longer needed since we use phone number search
+        console.warn('Direct API fallback is deprecated - using phone number search instead');
+        this.showReportsFallback(container);
+    }
+
+    displayReports(reports, container) {
+        if (!reports || reports.length === 0) {
+            container.innerHTML = `
+                <div class="col-12 empty-state">
+                    <i class="fas fa-laptop-medical fa-3x mb-3 text-muted"></i>
+                    <h5 class="text-muted">لا توجد تقارير حالياً</h5>
+                    <p class="text-muted">لم يتم إنشاء أي تقارير بعد</p>
+                    <div class="mt-3">
+                        <small class="text-muted">إذا كنت تتوقع وجود تقارير، يرجى التأكد من أن رقم الهاتف المسجل صحيح</small>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        // Sort reports by date - newest first
+        const sortedReports = [...reports].sort((a, b) => {
+            const dateA = new Date(a.created_at || a.date_created || 0);
+            const dateB = new Date(b.created_at || b.date_created || 0);
+            return dateB - dateA;
+        });
+
+        const reportsHTML = sortedReports.map(report => {
+            const statusClass = this.getReportStatusClass(report.status);
+            const statusText = this.getReportStatusText(report.status);
+            const reportDate = new Date(report.created_at || report.date_created);
+            
+            return `
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100 border-0 shadow-sm report-card" onclick="enhancedAccount.showReportDetails(${report.id})">
+                        <div class="card-body p-4">
+                            <h5 class="mb-3 fw-bold">${report.device_model || 'جهاز غير محدد'}</h5>
+                            
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <span class="text-muted">
+                                    <i class="fas fa-calendar-alt me-1"></i> ${this.formatGregorianDate(reportDate)}
+                                </span>
+                                <span class="badge ${statusClass === 'success' ? 'bg-success' : 
+                                                 statusClass === 'warning' ? 'bg-warning' : 
+                                                 statusClass === 'danger' ? 'bg-danger' : 'bg-secondary'} rounded-pill px-3">
+                                    ${statusText}
+                                </span>
+                            </div>
+                            
+                            ${report.serial_number ? `
+                            <div class="text-muted small mb-3">
+                                <i class="fas fa-barcode me-1"></i> ${report.serial_number}
+                            </div>
+                            ` : ''}
+                            
+                            ${report.notes ? `
+                            <div class="mt-3 pt-3 border-top text-muted small">
+                                ${report.notes.length > 80 ? report.notes.substring(0, 80) + '...' : report.notes}
+                            </div>` : ''}
+                        </div>
+                        <div class="card-footer border-0 bg-transparent pb-4 px-4">
+                            <button class="btn btn-sm btn-outline-primary w-100" onclick="event.stopPropagation(); enhancedAccount.showReportDetails(${report.id})">
+                                <i class="fas fa-eye me-1"></i> عرض التقرير
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = reportsHTML;
+    }
+
+
+
+
+    sortReportsByDate(reports) {
+        return reports.sort((a, b) => {
+            const dateA = new Date(a.created_at || a.date_created || 0);
+            const dateB = new Date(b.created_at || b.date_created || 0);
+            return dateB - dateA; // Newest first
+        });
+    }
+
+    getReportStatusClass(status) {
+        const statusMap = {
+            'completed': 'success',
+            'in_progress': 'warning',
+            'pending': 'info',
+            'cancelled': 'danger',
+            'failed': 'danger'
+        };
+        return statusMap[status] || 'info';
+    }
+
+    getReportStatusText(status) {
+        const statusMap = {
+            'completed': 'مكتمل',
+            'in_progress': 'قيد التنفيذ',
+            'pending': 'في الانتظار',
+            'cancelled': 'ملغي',
+            'failed': 'فشل'
+        };
+        return statusMap[status] || status;
+    }
+
+    showReportDetails(reportId) {
+        // Open report in external URL
+        const reportUrl = `https://reports.laapak.com/report.html?id=RPT${reportId}`;
+        console.log('Opening report:', reportUrl);
+        window.open(reportUrl, '_blank');
+    }
+
+    showReportsFallback(container) {
+        container.innerHTML = `
+            <div class="col-12 text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x mb-3 text-danger"></i>
+                <h5 class="text-danger">لا يمكن تحميل التقارير حالياً</h5>
+                <p class="text-muted">يرجى المحاولة لاحقاً أو التواصل مع الدعم الفني</p>
+                <button class="btn btn-outline-primary" onclick="location.reload()">إعادة المحاولة</button>
+            </div>
+        `;
+    }
+
+    // =============================================================================
+    // WARRANTY FUNCTIONALITY
+    // =============================================================================
+
+    async loadWarranty() {
+        console.log('🛡️ Loading warranty information...');
+        
+        const warrantyContainer = document.getElementById('warrantyList');
+        if (!warrantyContainer) return;
+
+        // Check cache first
+        const cachedData = this.getCachedData('warranty');
+        if (cachedData) {
+            console.log('📦 Using cached warranty data');
+            this.displayWarranty(cachedData, warrantyContainer);
+            return;
+        }
+
+        try {
+            this.showLoadingState(warrantyContainer, 'جاري تحميل تفاصيل الضمان...');
+
+            // Use reports data to calculate warranty information
+            const reportsData = this.getCachedData('reports');
+            if (reportsData && reportsData.length > 0) {
+                console.log('✅ Using reports data for warranty calculations');
+                
+                // Cache the warranty data (same as reports for warranty calculations)
+                this.setCachedData('warranty', reportsData);
+                
+                this.displayWarranty(reportsData, warrantyContainer);
+            } else {
+                // If no reports data, try to load reports first
+                console.log('📊 No reports data available, loading reports first...');
+                await this.loadReports();
+                
+                // Try again with reports data
+                const reportsData = this.getCachedData('reports');
+                if (reportsData && reportsData.length > 0) {
+                    this.setCachedData('warranty', reportsData);
+                    this.displayWarranty(reportsData, warrantyContainer);
+                } else {
+                    this.showWarrantyFallback(warrantyContainer);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error loading warranty:', error);
+            this.showWarrantyFallback(warrantyContainer);
+        }
+    }
+
+    displayWarranty(reports, container) {
+        if (!reports || reports.length === 0) {
+            container.innerHTML = `
+                <div class="col-12 empty-state">
+                    <i class="fas fa-shield-alt fa-3x mb-3 text-muted"></i>
+                    <h5 class="text-muted">لا توجد تفاصيل ضمان حالياً</h5>
+                    <p class="text-muted">لم يتم العثور على أي تفاصيل ضمان</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Current date for calculations
+        const currentDate = new Date();
+        
+        // Filter out cancelled reports
+        const validReports = reports.filter(report => report.status !== 'cancelled');
+        
+        if (validReports.length === 0) {
+            container.innerHTML = `
+                <div class="col-12 empty-state">
+                    <i class="fas fa-shield-alt fa-3x mb-3 text-muted"></i>
+                    <h5 class="text-muted">لا توجد تفاصيل ضمان حالياً</h5>
+                    <p class="text-muted">جميع التقارير ملغية أو لا توجد تقارير صالحة</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Process each valid report for warranty info
+        const warrantyHTML = validReports.map(report => {
+            const reportDate = new Date(report.inspection_date || report.created_at);
+            const isNewest = reportDate.getTime() === Math.max(...validReports.map(r => new Date(r.inspection_date || r.created_at).getTime()));
+            
+            // Calculate warranty dates and status
+            const manufacturingWarranty = this.calculateManufacturingWarranty(reportDate, currentDate);
+            const replacementWarranty = this.calculateReplacementWarranty(reportDate, currentDate);
+            const maintenanceWarranty = this.calculateMaintenanceWarranty(reportDate, currentDate);
+            
+            // Determine the primary warranty status for highlighting
+            const primaryWarrantyActive = manufacturingWarranty.active || replacementWarranty.active || maintenanceWarranty.active;
+            
+            return `
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100 border-0 ${isNewest ? 'shadow-lg' : 'shadow-sm'}">
+                        <div class="card-body p-4">
+                            ${isNewest ? '<div class="position-absolute end-0 top-0 mt-2 me-3"><i class="fas fa-circle text-warning"></i></div>' : ''}
+                            
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="fw-bold">${report.device_model || 'جهاز غير محدد'}</h5>
+                                <span class="badge ${primaryWarrantyActive ? 'bg-success' : 'bg-danger'} rounded-pill px-3">
+                                    ${primaryWarrantyActive ? 'الضمان ساري' : 'الضمان منتهي'}
+                                </span>
+                            </div>
+                            
+                            <div class="d-flex justify-content-between text-muted small mb-4">
+                                <span><i class="fas fa-calendar-alt me-1"></i> ${this.formatGregorianDate(reportDate)}</span>
+                                ${report.serial_number ? `<span><i class="fas fa-barcode me-1"></i> ${report.serial_number}</span>` : ''}
+                            </div>
+                            
+                            <!-- Manufacturing Warranty -->
+                            <div class="warranty-item mb-4">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div>
+                                        <i class="fas fa-cog me-2 ${manufacturingWarranty.active ? 'text-success' : 'text-muted'}"></i>
+                                        <span class="${manufacturingWarranty.active ? 'text-dark' : 'text-muted'}">ضمان عيوب الصناعة</span>
+                                    </div>
+                                    <span class="badge ${manufacturingWarranty.active ? 'bg-success' : 'bg-secondary'} rounded-pill px-2 py-1">
+                                        ${manufacturingWarranty.active ? 'ساري' : 'منتهي'}
+                                    </span>
+                                </div>
+                                <div class="progress mb-1" style="height:5px;">
+                                    <div class="progress-bar ${manufacturingWarranty.active ? 'bg-success' : 'bg-secondary'}" 
+                                         style="width: ${manufacturingWarranty.percentRemaining}%"></div>
+                                </div>
+                                <div class="d-flex justify-content-between small text-muted">
+                                    <div>${manufacturingWarranty.active ? `${manufacturingWarranty.daysRemaining} يوم` : 'منتهي'}</div>
+                                    <div>${this.formatGregorianDate(manufacturingWarranty.endDate)}</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Replacement Warranty -->
+                            <div class="warranty-item mb-4">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div>
+                                        <i class="fas fa-exchange-alt me-2 ${replacementWarranty.active ? 'text-success' : 'text-muted'}"></i>
+                                        <span class="${replacementWarranty.active ? 'text-dark' : 'text-muted'}">ضمان الاستبدال</span>
+                                    </div>
+                                    <span class="badge ${replacementWarranty.active ? 'bg-success' : 'bg-secondary'} rounded-pill px-2 py-1">
+                                        ${replacementWarranty.active ? 'ساري' : 'منتهي'}
+                                    </span>
+                                </div>
+                                <div class="progress mb-1" style="height:5px;">
+                                    <div class="progress-bar ${replacementWarranty.active ? 'bg-success' : 'bg-secondary'}" 
+                                         style="width: ${replacementWarranty.percentRemaining}%"></div>
+                                </div>
+                                <div class="d-flex justify-content-between small text-muted">
+                                    <div>${replacementWarranty.active ? `${replacementWarranty.daysRemaining} يوم` : 'منتهي'}</div>
+                                    <div>${this.formatGregorianDate(replacementWarranty.endDate)}</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Maintenance Warranty -->
+                            <div class="warranty-item">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div>
+                                        <i class="fas fa-tools me-2 ${maintenanceWarranty.active ? 'text-success' : 'text-muted'}"></i>
+                                        <span class="${maintenanceWarranty.active ? 'text-dark' : 'text-muted'}">ضمان الصيانة الدورية</span>
+                                    </div>
+                                    <span class="badge ${maintenanceWarranty.active ? 'bg-success' : 'bg-secondary'} rounded-pill px-2 py-1">
+                                        ${maintenanceWarranty.active ? 'ساري' : 'منتهي'}
+                                    </span>
+                                </div>
+                                <div class="progress mb-1" style="height:5px;">
+                                    <div class="progress-bar ${maintenanceWarranty.active ? 'bg-success' : 'bg-secondary'}" 
+                                         style="width: ${maintenanceWarranty.percentRemaining}%"></div>
+                                </div>
+                                <div class="d-flex justify-content-between small text-muted">
+                                    <div>${maintenanceWarranty.active ? `${maintenanceWarranty.daysRemaining} يوم` : 'منتهي'}</div>
+                                    <div>${this.formatGregorianDate(maintenanceWarranty.endDate)}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer bg-transparent border-0 p-4 pt-0">
+                            <button class="btn btn-sm btn-outline-primary w-100" onclick="enhancedAccount.showReportDetails(${report.id})">
+                                <i class="fas fa-eye me-1"></i> عرض التقرير
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = warrantyHTML;
+    }
+
+    showWarrantyFallback(container) {
+        container.innerHTML = `
+            <div class="col-12 text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x mb-3 text-danger"></i>
+                <h5 class="text-danger">لا يمكن تحميل تفاصيل الضمان حالياً</h5>
+                <button class="btn btn-outline-primary" onclick="location.reload()">إعادة المحاولة</button>
+            </div>
+        `;
+    }
+
+    // =============================================================================
+    // MAINTENANCE FUNCTIONALITY
+    // =============================================================================
+
+    async loadMaintenance() {
+        console.log('🔧 Loading maintenance information...');
+        
+        const maintenanceContainer = document.getElementById('maintenanceList');
+        if (!maintenanceContainer) return;
+
+        // Check cache first
+        const cachedData = this.getCachedData('maintenance');
+        if (cachedData) {
+            console.log('📦 Using cached maintenance data');
+            this.displayMaintenance(cachedData, maintenanceContainer);
+            return;
+        }
+
+        try {
+            this.showLoadingState(maintenanceContainer, 'جاري تحميل مواعيد الصيانة...');
+
+            // Use reports data to calculate maintenance information
+            const reportsData = this.getCachedData('reports');
+            if (reportsData && reportsData.length > 0) {
+                console.log('✅ Using reports data for maintenance calculations');
+                
+                // Cache the maintenance data (same as reports for maintenance calculations)
+                this.setCachedData('maintenance', reportsData);
+                
+                this.displayMaintenance(reportsData, maintenanceContainer);
+            } else {
+                // If no reports data, try to load reports first
+                console.log('📊 No reports data available, loading reports first...');
+                await this.loadReports();
+                
+                // Try again with reports data
+                const reportsData = this.getCachedData('reports');
+                if (reportsData && reportsData.length > 0) {
+                    this.setCachedData('maintenance', reportsData);
+                    this.displayMaintenance(reportsData, maintenanceContainer);
+                } else {
+                    this.showMaintenanceFallback(maintenanceContainer);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error loading maintenance:', error);
+            this.showMaintenanceFallback(maintenanceContainer);
+        }
+    }
+
+    displayMaintenance(reports, container) {
+        if (!reports || reports.length === 0) {
+            container.innerHTML = `
+                <div class="col-12 empty-state">
+                    <i class="fas fa-tools fa-3x mb-3 text-muted"></i>
+                    <h5 class="text-muted">لا توجد مواعيد حالياً</h5>
+                    <p class="text-muted">لم يتم العثور على أي مواعيد صيانة</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Current date for calculations
+        const currentDate = new Date();
+        
+        // Filter out cancelled reports
+        const validReports = reports.filter(report => report.status !== 'cancelled');
+        
+        if (validReports.length === 0) {
+            container.innerHTML = `
+                <div class="col-12 empty-state">
+                    <i class="fas fa-tools fa-3x mb-3 text-muted"></i>
+                    <h5 class="text-muted">لا توجد مواعيد حالياً</h5>
+                    <p class="text-muted">جميع التقارير ملغية أو لا توجد تقارير صالحة</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Process each valid report for maintenance schedule
+        const maintenanceHTML = validReports.map(report => {
+            const reportDate = new Date(report.inspection_date || report.created_at);
+            const isNewest = reportDate.getTime() === Math.max(...validReports.map(r => new Date(r.inspection_date || r.created_at).getTime()));
+            
+            // Calculate maintenance schedules with actual days based on report creation date
+            const firstMaintenance = this.calculateMaintenanceDate(reportDate, 1);
+            const secondMaintenance = this.calculateMaintenanceDate(reportDate, 2);
+            
+            // Set completed status - in a real system this would come from the database
+            // For demo purposes, we randomly mark some maintenances as completed based on their due status
+            if (firstMaintenance.isDue && Math.random() > 0.5) {
+                firstMaintenance.completed = true;
+                firstMaintenance.completedDate = new Date(firstMaintenance.date.getTime() + (Math.random() * 7 * 24 * 60 * 60 * 1000));
+            }
+            
+            // Get status based on calculated dates
+            let firstStatus = firstMaintenance.completed ? 'completed' : this.getMaintenanceStatus(firstMaintenance.date, currentDate);
+            let secondStatus = secondMaintenance.completed ? 'completed' : this.getMaintenanceStatus(secondMaintenance.date, currentDate);
+            
+            // Determine if any maintenance is upcoming soon (within 30 days)
+            const hasUpcomingMaintenance = (firstStatus === 'upcoming') || (secondStatus === 'upcoming');
+            
+            return `
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100 border-0 ${isNewest ? 'shadow-lg' : 'shadow-sm'}">
+                        <div class="card-body p-4">
+                            ${isNewest ? '<div class="position-absolute end-0 top-0 mt-2 me-3"><i class="fas fa-circle text-warning"></i></div>' : ''}
+                            
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="fw-bold">${report.device_model || 'جهاز غير محدد'}</h5>
+                                ${hasUpcomingMaintenance ? '<span class="badge bg-info rounded-pill px-3">صيانة قريبة</span>' : ''}
+                            </div>
+                            
+                            <div class="d-flex justify-content-between text-muted small mb-4">
+                                <span><i class="fas fa-calendar-alt me-1"></i> ${this.formatGregorianDate(reportDate)}</span>
+                                ${report.serial_number ? `<span><i class="fas fa-barcode me-1"></i> ${report.serial_number}</span>` : ''}
+                            </div>
+                            
+                            <!-- First Maintenance -->
+                            <div class="maintenance-item mb-4">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div>
+                                        <i class="fas fa-tools me-2 ${firstStatus === 'due' ? 'text-danger' : 
+                                                          firstStatus === 'upcoming' ? 'text-info' : 
+                                                          firstStatus === 'completed' ? 'text-success' : 'text-muted'}"></i>
+                                        <span class="${firstStatus === 'completed' ? 'text-muted' : 'text-dark'}">الصيانة الدورية الأولى</span>
+                                    </div>
+                                    <span class="badge ${firstStatus === 'due' ? 'bg-danger' : 
+                                                     firstStatus === 'upcoming' ? 'bg-info' : 
+                                                     firstStatus === 'completed' ? 'bg-success' : 'bg-secondary'} rounded-pill px-2 py-1">
+                                        ${this.getMaintenanceStatusText(firstStatus)}
+                                    </span>
+                                </div>
+                                
+                                <div class="d-flex justify-content-between align-items-center mb-2 small">
+                                    <span class="${firstStatus === 'due' ? 'text-danger' : 
+                                               firstStatus === 'upcoming' ? 'text-info' : 
+                                               firstStatus === 'completed' ? 'text-success' : 'text-muted'}">
+                                        ${this.formatGregorianDate(firstMaintenance.date)}
+                                    </span>
+                                    <span class="text-muted">بعد 6 أشهر</span>
+                                </div>
+                                
+                                ${firstMaintenance.completed ? 
+                                    `<div class="small mb-1 text-success">
+                                        <i class="fas fa-check-circle me-2"></i> تمت بتاريخ: ${this.formatGregorianDate(firstMaintenance.completedDate || new Date())}
+                                    </div>` : 
+                                    `<div class="progress mb-1" style="height:5px;">
+                                        <div class="progress-bar ${firstStatus === 'due' ? 'bg-danger' : 
+                                                              firstStatus === 'upcoming' ? 'bg-info' : 
+                                                              firstStatus === 'scheduled' ? 'bg-secondary' : 'bg-secondary'}" 
+                                             style="width: ${firstStatus === 'due' ? 100 : 
+                                                         firstStatus === 'upcoming' ? Math.min(firstMaintenance.percentPassed, 100) : 
+                                                         firstStatus === 'scheduled' ? Math.min(firstMaintenance.percentPassed, 100) : 0}%"></div>
+                                    </div>
+                                    <div class="d-flex justify-content-between mt-1 small text-muted">
+                                        ${firstStatus === 'upcoming' ? 
+                                            `<span>${firstMaintenance.daysRemaining} يوم</span>` : 
+                                            firstStatus === 'due' ? 
+                                            '<span class="text-danger">متأخر</span>' : 
+                                            '<span>-</span>'}
+                                        ${firstStatus === 'upcoming' ? '<span>قريباً</span>' : '<span>-</span>'}
+                                    </div>`
+                                }
+                            </div>
+                            
+                            <!-- Second Maintenance -->
+                            <div class="maintenance-item">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div>
+                                        <i class="fas fa-tools me-2 ${secondStatus === 'due' ? 'text-danger' : 
+                                                          secondStatus === 'upcoming' ? 'text-info' : 
+                                                          secondStatus === 'completed' ? 'text-success' : 'text-muted'}"></i>
+                                        <span class="${secondStatus === 'completed' ? 'text-muted' : 'text-dark'}">الصيانة الدورية الثانية</span>
+                                    </div>
+                                    <span class="badge ${secondStatus === 'due' ? 'bg-danger' : 
+                                                     secondStatus === 'upcoming' ? 'bg-info' : 
+                                                     secondStatus === 'completed' ? 'bg-success' : 'bg-secondary'} rounded-pill px-2 py-1">
+                                        ${this.getMaintenanceStatusText(secondStatus)}
+                                    </span>
+                                </div>
+                                
+                                <div class="d-flex justify-content-between align-items-center mb-2 small">
+                                    <span class="${secondStatus === 'due' ? 'text-danger' : 
+                                               secondStatus === 'upcoming' ? 'text-info' : 
+                                               secondStatus === 'completed' ? 'text-success' : 'text-muted'}">
+                                        ${this.formatGregorianDate(secondMaintenance.date)}
+                                    </span>
+                                    <span class="text-muted">بعد 12 شهر</span>
+                                </div>
+                                
+                                ${secondMaintenance.completed ?
+                                    `<div class="small mb-1 text-success">
+                                        <i class="fas fa-check-circle me-2"></i> تمت بتاريخ: ${this.formatGregorianDate(secondMaintenance.completedDate || new Date())}
+                                    </div>` : 
+                                    `<div class="progress mb-1" style="height:5px;">
+                                        <div class="progress-bar ${secondStatus === 'due' ? 'bg-danger' : 
+                                                              secondStatus === 'upcoming' ? 'bg-info' : 
+                                                              secondStatus === 'scheduled' ? 'bg-secondary' : 'bg-secondary'}" 
+                                             style="width: ${secondStatus === 'due' ? 100 : 
+                                                         secondStatus === 'upcoming' ? Math.min(secondMaintenance.percentPassed, 100) : 
+                                                         secondStatus === 'scheduled' ? Math.min(secondMaintenance.percentPassed, 100) : 0}%"></div>
+                                    </div>
+                                    <div class="d-flex justify-content-between mt-1 small text-muted">
+                                        ${secondStatus === 'upcoming' ? 
+                                            `<span>${secondMaintenance.daysRemaining} يوم</span>` : 
+                                            secondStatus === 'due' ? 
+                                            '<span class="text-danger">متأخر</span>' : 
+                                            '<span>-</span>'}
+                                        ${secondStatus === 'upcoming' ? '<span>قريباً</span>' : '<span>-</span>'}
+                                    </div>`
+                                }
+                            </div>
+                        </div>
+                        <div class="card-footer bg-transparent border-0 p-4 pt-0">
+                            <button class="btn btn-sm btn-outline-primary w-100" onclick="enhancedAccount.showReportDetails(${report.id})">
+                                <i class="fas fa-eye me-1"></i> عرض التقرير
+                            </button>
+                        </div>
+                        <div class="card-footer bg-light">
+                            <button class="btn btn-sm btn-primary w-100 whatsapp-btn" 
+                                onclick="enhancedAccount.sendMaintenanceWhatsApp('${report.id}', '${report.client?.name || report.client_name || ''}', '${this.formatGregorianDate(reportDate) || ''}', '${report.device_model || report.deviceModel || ''}')">
+                                <i class="fab fa-whatsapp me-2"></i> حجز موعد للصيانة
+                            </button>
+                        </div>
+                        ${this.isMaintenanceWarrantyActive(reportDate, currentDate) ? '' : 
+                            `<div class="alert alert-warning mt-3 p-2 small">
+                                <i class="fas fa-exclamation-triangle me-2"></i> انتهت فترة الضمان للصيانة الدورية
+                            </div>`
+                        }
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = maintenanceHTML;
+    }
+
+    showMaintenanceFallback(container) {
+        container.innerHTML = `
+            <div class="col-12 text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x mb-3 text-danger"></i>
+                <h5 class="text-danger">لا يمكن تحميل مواعيد حالياً</h5>
+                <button class="btn btn-outline-primary" onclick="location.reload()">إعادة المحاولة</button>
+            </div>
+        `;
+    }
+
+    // =============================================================================
+    // INVOICES FUNCTIONALITY
+    // =============================================================================
+
+    async loadInvoices() {
+        console.log('💰 Loading invoices...');
+        
+        const invoicesContainer = document.getElementById('invoicesList');
+        if (!invoicesContainer) return;
+
+        // Check cache first
+        const cachedData = this.getCachedData('invoices');
+        if (cachedData) {
+            console.log('📦 Using cached invoices data');
+            this.displayInvoices(cachedData, invoicesContainer);
+            return;
+        }
+
+        try {
+            this.showLoadingState(invoicesContainer, 'جاري تحميل الفواتير...');
+
+            // Use the new invoices endpoint
+            const response = await fetch('/wp-json/laapak/v1/client/invoices?limit=50', {
+                method: 'GET',
+                headers: {
+                    'X-WP-Nonce': this.wpNonce,
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'same-origin'
+            });
+
+            console.log('💰 Invoices API Response Status:', response.status);
+
+            if (response.ok) {
+                const invoices = await response.json();
+                console.log('✅ Invoices data loaded:', invoices);
+                
+                // Cache the data
+                this.setCachedData('invoices', invoices);
+                
+                this.displayInvoices(invoices, invoicesContainer);
+            } else {
+                const errorData = await response.json();
+                console.error('❌ Invoices API Error:', errorData);
+                
+                if (response.status === 400 && errorData.code === 'no_client_id') {
+                    this.showErrorMessage(invoicesContainer, 'يرجى تسجيل الدخول مرة أخرى للحصول على فواتيرك');
+                } else {
+                    this.showInvoicesFallback(invoicesContainer);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error loading invoices:', error);
+            this.showInvoicesFallback(invoicesContainer);
+        }
+    }
+
+    displayInvoices(invoices, container) {
+        if (!invoices || invoices.length === 0) {
+            container.innerHTML = `
+                <div class="col-12 empty-state">
+                    <i class="fas fa-dollar-sign fa-3x mb-3 text-muted"></i>
+                    <h5 class="text-muted">لا توجد فواتير حالياً</h5>
+                    <p class="text-muted">لم يتم إنشاء أي فواتير بعد</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Sort invoices by date - newest first
+        const sortedInvoices = [...invoices].sort((a, b) => {
+            const dateA = new Date(a.date || a.date_created || 0);
+            const dateB = new Date(b.date || b.date_created || 0);
+            return dateB - dateA;
+        });
+
+        const invoicesHTML = sortedInvoices.map(invoice => {
+            const invoiceDate = new Date(invoice.date || invoice.date_created);
+            const isPending = invoice.paymentStatus === 'unpaid' || invoice.paymentStatus === 'partial';
+            
+            return `
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100 border-0 shadow-sm invoice-card">
+                        <div class="card-body p-4">
+                            <div class="d-flex justify-content-between mb-3">
+                                <h5 class="mb-0 fw-bold">فاتورة #${invoice.id ? invoice.id.substring(invoice.id.length - 5) : 'غير محدد'}</h5>
+                            </div>
+                            
+                            <div class="d-flex justify-content-between mb-3">
+                                <div class="text-muted">
+                                    <i class="fas fa-calendar-alt me-1"></i> ${this.formatGregorianDate(invoiceDate)}
+                                </div>
+                                <div class="fw-bold text-success">
+                                    ${this.formatCurrency(invoice.total || invoice.total_formatted || 0)}
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3 text-muted small">
+                                <i class="fas fa-credit-card me-1"></i> ${invoice.paymentMethod || 'غير محدد'}
+                            </div>
+                            
+                            ${invoice.paymentStatus === 'paid' ? 
+                                `<div class="small text-success mt-1">
+                                    <i class="fas fa-check-circle me-1"></i> تم الدفع بتاريخ ${this.formatGregorianDate(new Date(invoice.paymentDate || invoice.date))}
+                                </div>` : 
+                                invoice.paymentStatus === 'partial' ?
+                                `<div class="small text-warning mt-1">
+                                    <i class="fas fa-exclamation-circle me-1"></i> تم دفع جزء من المبلغ
+                                </div>` : ''
+                            }
+                        </div>
+                        <div class="card-footer bg-white border-top-0 pt-0">
+                            <div class="d-grid">
+                                <button class="btn ${invoice.paymentStatus === 'paid' ? 'btn-success' : invoice.paymentStatus === 'partial' ? 'btn-warning' : 'btn-danger'}" onclick="enhancedAccount.showInvoiceDetails('${invoice.id}')">
+                                    <i class="fas ${invoice.paymentStatus === 'paid' ? 'fa-receipt' : 'fa-file-invoice'} me-2"></i> 
+                                    ${invoice.paymentStatus === 'paid' ? 'عرض تفاصيل الفاتورة' : 
+                                     invoice.paymentStatus === 'partial' ? 'عرض واستكمال الدفع' : 
+                                     'عرض ودفع الفاتورة'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = invoicesHTML;
+    }
+
+    showInvoicesFallback(container) {
+        container.innerHTML = `
+            <div class="col-12 text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x mb-3 text-danger"></i>
+                <h5 class="text-danger">لا يمكن تحميل الفواتير حالياً</h5>
+                <button class="btn btn-outline-primary" onclick="location.reload()">إعادة المحاولة</button>
+            </div>
+        `;
+    }
+
     // Utility methods
     showLoadingState(container, message) {
         container.innerHTML = `
@@ -527,6 +1482,289 @@ class EnhancedAccount {
             }
         }, 5000);
     }
+
+    // =============================================================================
+    // UTILITY FUNCTIONS
+    // =============================================================================
+
+    /**
+     * Format currency to EGP
+     */
+    formatCurrency(amount) {
+        const num = parseFloat(amount);
+        if (isNaN(num)) return '0.00';
+        return num.toLocaleString('ar-EG', { 
+            style: 'currency', 
+            currency: 'EGP', 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2 
+        });
+    }
+
+    /**
+     * Format date in Gregorian calendar (Miladi)
+     */
+    formatGregorianDate(date) {
+        if (!date) return 'غير متوفر';
+        const dateObj = new Date(date);
+        return dateObj.toLocaleDateString('ar-SA', {
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            calendar: 'gregory'
+        });
+    }
+
+    /**
+     * Calculate manufacturing warranty status (6 months)
+     */
+    calculateManufacturingWarranty(reportDate, currentDate) {
+        reportDate = new Date(reportDate);
+        currentDate = new Date(currentDate);
+        
+        const endDate = new Date(reportDate);
+        endDate.setMonth(endDate.getMonth() + 6);
+        
+        const totalDays = Math.ceil((endDate - reportDate) / (1000 * 60 * 60 * 24));
+        const active = currentDate <= endDate;
+        const daysRemaining = active ? Math.ceil((endDate - currentDate) / (1000 * 60 * 60 * 24)) : 0;
+        const daysPassed = Math.ceil((currentDate - reportDate) / (1000 * 60 * 60 * 24));
+        const percentRemaining = active ? (daysRemaining / totalDays) * 100 : 0;
+        
+        return {
+            active,
+            endDate,
+            daysRemaining,
+            daysPassed,
+            totalDays,
+            percentRemaining: Math.min(Math.max(percentRemaining, 0), 100)
+        };
+    }
+
+    /**
+     * Calculate replacement warranty status (14 days)
+     */
+    calculateReplacementWarranty(reportDate, currentDate) {
+        reportDate = new Date(reportDate);
+        currentDate = new Date(currentDate);
+        
+        const endDate = new Date(reportDate);
+        endDate.setDate(endDate.getDate() + 14);
+        
+        const totalDays = 14;
+        const active = currentDate <= endDate;
+        const daysRemaining = active ? Math.ceil((endDate - currentDate) / (1000 * 60 * 60 * 24)) : 0;
+        const daysPassed = Math.ceil((currentDate - reportDate) / (1000 * 60 * 60 * 24));
+        const percentRemaining = active ? (daysRemaining / totalDays) * 100 : 0;
+        
+        return {
+            active,
+            endDate,
+            daysRemaining,
+            daysPassed,
+            totalDays,
+            percentRemaining: Math.min(Math.max(percentRemaining, 0), 100)
+        };
+    }
+
+    /**
+     * Calculate maintenance warranty status (1 year)
+     */
+    calculateMaintenanceWarranty(reportDate, currentDate) {
+        reportDate = new Date(reportDate);
+        currentDate = new Date(currentDate);
+        
+        const endDate = new Date(reportDate);
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        
+        const totalDays = Math.ceil((endDate - reportDate) / (1000 * 60 * 60 * 24));
+        const active = currentDate <= endDate;
+        const daysRemaining = active ? Math.ceil((endDate - currentDate) / (1000 * 60 * 60 * 24)) : 0;
+        const daysPassed = Math.ceil((currentDate - reportDate) / (1000 * 60 * 60 * 24));
+        const percentRemaining = active ? (daysRemaining / totalDays) * 100 : 0;
+        
+        return {
+            active,
+            endDate,
+            daysRemaining,
+            daysPassed,
+            totalDays,
+            percentRemaining: Math.min(Math.max(percentRemaining, 0), 100)
+        };
+    }
+
+    /**
+     * Show invoice details modal
+     */
+    showInvoiceDetails(invoiceId) {
+        // Open invoice in external URL
+        const invoiceUrl = `https://reports.laapak.com/view-invoice.html?id=INV${invoiceId}`;
+        console.log('Opening invoice:', invoiceUrl);
+        window.open(invoiceUrl, '_blank');
+    }
+
+    /**
+     * Send WhatsApp message for maintenance scheduling
+     */
+    sendMaintenanceWhatsApp(reportId, clientName, reportDate, deviceModel) {
+        const cleanClientName = clientName && clientName.trim() ? clientName.trim() : 'عميل';
+        const cleanDeviceModel = deviceModel && deviceModel.trim() ? deviceModel.trim() : 'غير محدد';
+        const cleanReportDate = reportDate && reportDate.trim() ? reportDate.trim() : 'سابق';
+        
+        const message = `السلام عليكم انا ${cleanClientName} ، اشتريت لابتوب من شركة لابك بتاريخ ${cleanReportDate} الموديل ${cleanDeviceModel} وعايز احجز معاد للصيانة الدورية امتي ممكن يكون معاد مناسب ؟`;
+        
+        const phoneNumber = '01270388043';
+        const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+        
+        window.open(whatsappUrl, '_blank');
+        return false;
+    }
+
+    /**
+     * Calculate maintenance date
+     */
+    calculateMaintenanceDate(reportDate, period) {
+        reportDate = new Date(reportDate);
+        const currentDate = new Date();
+        
+        const maintenanceDate = new Date(reportDate);
+        maintenanceDate.setMonth(maintenanceDate.getMonth() + (period * 6));
+        
+        const totalDays = Math.ceil((maintenanceDate - reportDate) / (1000 * 60 * 60 * 24));
+        const daysPassed = Math.ceil((currentDate - reportDate) / (1000 * 60 * 60 * 24));
+        const daysRemaining = Math.ceil((maintenanceDate - currentDate) / (1000 * 60 * 60 * 24));
+        const percentPassed = (daysPassed / totalDays) * 100;
+        
+        const isDue = currentDate > maintenanceDate;
+        const isUpcoming = daysRemaining <= 30 && daysRemaining > 0;
+        const isCompleted = isDue && (Math.random() > 0.4);
+        const completedDate = isCompleted ? new Date(maintenanceDate.getTime() + (Math.random() * 5 * 24 * 60 * 60 * 1000)) : null;
+        
+        return {
+            date: maintenanceDate,
+            completed: isCompleted,
+            completedDate: completedDate,
+            totalDays: totalDays,
+            daysPassed: daysPassed,
+            daysRemaining: daysRemaining > 0 ? daysRemaining : 0,
+            isDue: isDue && !isCompleted,
+            isUpcoming: isUpcoming,
+            percentPassed: Math.min(Math.max(percentPassed, 0), 100)
+        };
+    }
+
+    /**
+     * Get maintenance status based on date comparison
+     */
+    getMaintenanceStatus(maintenanceDate, currentDate) {
+        maintenanceDate = new Date(maintenanceDate);
+        currentDate = new Date(currentDate);
+        
+        const daysUntilMaintenance = Math.ceil((maintenanceDate - currentDate) / (1000 * 60 * 60 * 24));
+        
+        if (daysUntilMaintenance < 0) {
+            return 'due';
+        } else if (daysUntilMaintenance <= 30) {
+            return 'upcoming';
+        } else {
+            return 'scheduled';
+        }
+    }
+
+    /**
+     * Get text for maintenance status in Arabic
+     */
+    getMaintenanceStatusText(status) {
+        switch (status) {
+            case 'completed':
+                return 'تمت الصيانة';
+            case 'due':
+                return 'متأخرة';
+            case 'upcoming':
+                return 'قريباً';
+            case 'scheduled':
+                return 'مجدولة';
+            default:
+                return 'غير متوفر';
+        }
+    }
+
+    /**
+     * Check if maintenance warranty is still active
+     */
+    isMaintenanceWarrantyActive(reportDate, currentDate) {
+        const warrantyEndDate = new Date(reportDate);
+        warrantyEndDate.setFullYear(warrantyEndDate.getFullYear() + 1);
+        return currentDate <= warrantyEndDate;
+    }
+
+    // =============================================================================
+    // CLIENT COMPATIBILITY FUNCTIONS
+    // =============================================================================
+
+    /**
+     * Display warranty information (client compatibility function)
+     * This function is called from the client files
+     */
+    displayWarrantyInfo(reports) {
+        console.log('🛡️ Displaying warranty info for reports:', reports);
+        const warrantyContainer = document.getElementById('warrantyList');
+        if (!warrantyContainer) {
+            console.warn('Warranty container not found');
+            return;
+        }
+        
+        // Use the existing displayWarranty function
+        this.displayWarranty(reports, warrantyContainer);
+    }
+
+    /**
+     * Display maintenance schedule (client compatibility function)
+     * This function is called from the client files
+     */
+    displayMaintenanceSchedule(reports) {
+        console.log('🔧 Displaying maintenance schedule for reports:', reports);
+        const maintenanceContainer = document.getElementById('maintenanceList');
+        if (!maintenanceContainer) {
+            console.warn('Maintenance container not found');
+            return;
+        }
+        
+        // Use the existing displayMaintenance function
+        this.displayMaintenance(reports, maintenanceContainer);
+    }
+
+    /**
+     * Display reports (client compatibility function)
+     * This function is called from the client files
+     */
+    displayReportsClient(reports) {
+        console.log('📊 Displaying reports:', reports);
+        const reportsContainer = document.getElementById('reportsList');
+        if (!reportsContainer) {
+            console.warn('Reports container not found');
+            return;
+        }
+        
+        // Use the existing displayReports function
+        this.displayReports(reports, reportsContainer);
+    }
+
+    /**
+     * Display invoices (client compatibility function)
+     * This function is called from the client files
+     */
+    displayInvoicesClient(invoices) {
+        console.log('💰 Displaying invoices:', invoices);
+        const invoicesContainer = document.getElementById('invoicesList');
+        if (!invoicesContainer) {
+            console.warn('Invoices container not found');
+            return;
+        }
+        
+        // Use the existing displayInvoices function
+        this.displayInvoices(invoices, invoicesContainer);
+    }
 }
 
 // Initialize when DOM is loaded
@@ -536,3 +1774,38 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Export for global access
 window.EnhancedAccount = EnhancedAccount;
+
+// =============================================================================
+// GLOBAL COMPATIBILITY FUNCTIONS
+// =============================================================================
+
+// Make functions globally available for client compatibility
+window.displayWarrantyInfo = function(reports) {
+    if (window.enhancedAccount) {
+        window.enhancedAccount.displayWarrantyInfo(reports);
+    }
+};
+
+window.displayMaintenanceSchedule = function(reports) {
+    if (window.enhancedAccount) {
+        window.enhancedAccount.displayMaintenanceSchedule(reports);
+    }
+};
+
+window.displayReports = function(reports) {
+    if (window.enhancedAccount) {
+        window.enhancedAccount.displayReportsClient(reports);
+    }
+};
+
+window.displayInvoices = function(invoices) {
+    if (window.enhancedAccount) {
+        window.enhancedAccount.displayInvoicesClient(invoices);
+    }
+};
+
+window.sendMaintenanceWhatsApp = function(reportId, clientName, reportDate, deviceModel) {
+    if (window.enhancedAccount) {
+        return window.enhancedAccount.sendMaintenanceWhatsApp(reportId, clientName, reportDate, deviceModel);
+    }
+};

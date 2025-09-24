@@ -1,8 +1,3 @@
-<?php
-/**
- * Simplified Functions.php - Focus on WooCommerce Integration
- * Removed unnecessary external API integrations
- */
 
 // =============================================================================
 // CUSTOM PAGE TEMPLATES
@@ -68,47 +63,7 @@ function enqueue_custom_auth_assets() {
 }
 add_action('wp_enqueue_scripts', 'enqueue_custom_auth_assets');
 
-// =============================================================================
-// UNIFIED NAVIGATION SYSTEM
-// =============================================================================
 
-function add_unified_navigation_meta() {
-    echo '<!-- Unified Navigation System -->' . "\n";
-    echo '<meta name="unified-system" content="login-register-account">' . "\n";
-    echo '<meta name="system-pages" content="' . home_url('/login/') . ',' . home_url('/register/') . ',' . home_url('/enhanced-account/') . '">' . "\n";
-}
-
-// Add navigation links to all pages
-function add_unified_navigation_links() {
-    $current_page = get_post_field('post_name', get_the_ID());
-    
-    if (in_array($current_page, ['login', 'register', 'enhanced-account'])) {
-        echo '<div class="unified-nav-links" style="position: fixed; top: 10px; right: 10px; z-index: 1000;">';
-        echo '<div class="btn-group" role="group">';
-        
-        if ($current_page !== 'login') {
-            echo '<a href="' . home_url('/login/') . '" class="btn btn-sm btn-outline-primary">';
-            echo '<i class="fas fa-sign-in-alt me-1"></i> تسجيل الدخول';
-            echo '</a>';
-        }
-        
-        if ($current_page !== 'register') {
-            echo '<a href="' . home_url('/register/') . '" class="btn btn-sm btn-outline-success">';
-            echo '<i class="fas fa-user-plus me-1"></i> إنشاء حساب';
-            echo '</a>';
-        }
-        
-        if (is_user_logged_in() && $current_page !== 'enhanced-account') {
-            echo '<a href="' . home_url('/enhanced-account/') . '" class="btn btn-sm btn-outline-info">';
-            echo '<i class="fas fa-user-circle me-1"></i> حسابي';
-            echo '</a>';
-        }
-        
-        echo '</div>';
-        echo '</div>';
-    }
-}
-add_action('wp_footer', 'add_unified_navigation_links');
 
 // =============================================================================
 // UNIFIED AUTHENTICATION SYSTEM (COMPLEX)
@@ -150,16 +105,16 @@ function handle_custom_login() {
         if ($result['success']) {
             error_log("Login successful for user: " . $username . " (source: " . $result['source'] . ")");
             
-            // Authenticate with Laapak API and get the remote token
+            // Authenticate with Laapak API and get the client ID
             $remote_auth_result = authenticate_with_laapak_api($username, $password);
             if ($remote_auth_result['success']) {
-                error_log("Laapak API authentication successful, storing remote token");
-                // Store the remote token in user meta for use in enhanced-account
-                update_user_meta($result['user_id'], 'laapak_client_token', $remote_auth_result['token']);
+                error_log("Laapak API authentication successful, storing client ID");
+                // Store the client ID and info in user meta for use in enhanced-account
+                update_user_meta($result['user_id'], 'laapak_client_id', $remote_auth_result['client_id']);
                 update_user_meta($result['user_id'], 'laapak_client_info', $remote_auth_result['client']);
-                error_log("Remote token stored: " . substr($remote_auth_result['token'], 0, 50) . "...");
+                error_log("Client ID stored: " . $remote_auth_result['client_id']);
             } else {
-                error_log("Laapak API authentication failed: " . $remote_auth_result['message']);
+                error_log("Laapak API authentication failed: " . $remote_auth_result['error']);
                 // Continue with WordPress login even if Laapak auth fails
             }
             
@@ -332,30 +287,116 @@ function perform_unified_registration($username, $email, $password, $first_name,
 }
 
 // =============================================================================
-// EXTERNAL API INTEGRATIONS (LAAPAK API)
+// EXTERNAL API INTEGRATIONS (LAAPAK API V2)
 // =============================================================================
+
+// API Configuration
+define('LAAPAK_API_BASE_URL', 'https://reports.laapak.com/api/v2/external');
+define('LAAPAK_API_KEY', 'ak_live_500255ff51b5578eb115e16cef37e6c9e84ecd3baceb5cff0f45182ae7673d58');
+define('LAAPAK_API_TIMEOUT', 15); // Reduced from 30 to 15 seconds for better performance
+
+// Error handling helper functions
+function handle_laapak_api_error($response, $context = 'API call') {
+    if (is_wp_error($response)) {
+        error_log("Laapak API Error [$context]: " . $response->get_error_message());
+        return array(
+            'success' => false,
+            'error' => 'API connection failed',
+            'message' => $response->get_error_message()
+        );
+    }
+    
+    $status_code = wp_remote_retrieve_response_code($response);
+    $body = wp_remote_retrieve_body($response);
+    
+    if ($status_code >= 400) {
+        $data = json_decode($body, true);
+        $error_message = $data['message'] ?? 'Unknown API error';
+        
+        error_log("Laapak API Error [$context]: HTTP $status_code - $error_message");
+        
+        return array(
+            'success' => false,
+            'error' => 'API request failed',
+            'message' => $error_message,
+            'status_code' => $status_code
+        );
+    }
+    
+    return null; // No error
+}
+
+function validate_client_id($user_id) {
+    $client_id = get_user_meta($user_id, 'laapak_client_id', true);
+    
+    if (empty($client_id)) {
+        error_log("Laapak API: No client ID found for user $user_id");
+        return new WP_Error('no_client_id', 'Client ID not found. Please login again.', array('status' => 400));
+    }
+    
+    return $client_id;
+}
+
+// Helper function to get or lookup client ID
+function get_or_lookup_client_id($user_id) {
+    $client_id = get_user_meta($user_id, 'laapak_client_id', true);
+    
+    if (!empty($client_id)) {
+        return $client_id;
+    }
+    
+    // Try to get client ID by looking up user's phone number
+    $user_phone = get_user_meta($user_id, 'phone', true);
+    if (empty($user_phone)) {
+        // Try to get phone from username if it's a phone number
+        $user_data = get_userdata($user_id);
+        $user_phone = $user_data ? $user_data->user_login : '';
+    }
+    
+    if (!empty($user_phone)) {
+        error_log("Laapak API: Attempting to lookup client ID for phone: " . $user_phone);
+        
+        // Try to get client ID from external API
+        $lookup_result = check_laapak_user_api($user_phone);
+        if ($lookup_result['found'] && isset($lookup_result['client']['id'])) {
+            $client_id = $lookup_result['client']['id'];
+            update_user_meta($user_id, 'laapak_client_id', $client_id);
+            update_user_meta($user_id, 'laapak_client_info', $lookup_result['client']);
+            error_log("Laapak API: Client ID found and stored: " . $client_id);
+            return $client_id;
+        } else {
+            error_log("Laapak API: Client not found in external system for phone: " . $user_phone);
+            return false;
+        }
+    } else {
+        error_log("Laapak API: No phone number found for user: " . $user_id);
+        return false;
+    }
+}
 
 // Authenticate with Laapak API and get client token
 function authenticate_with_laapak_api($phone, $password) {
-    $api_url = 'https://reports.laapak.com/api/auth/client/login';
+    $api_url = LAAPAK_API_BASE_URL . '/auth/verify-client';
     
     // Log API attempt for debugging
     error_log("Laapak API: Attempting to authenticate client with phone: " . $phone);
     
     $response = wp_remote_post($api_url, array(
         'headers' => array(
-            'Content-Type' => 'application/json'
+            'Content-Type' => 'application/json',
+            'x-api-key' => LAAPAK_API_KEY
         ),
         'body' => json_encode(array(
             'phone' => $phone,
-            'password' => $password
+            'orderCode' => 'WP_LOGIN_' . time() // Generate order code for login
         )),
-        'timeout' => 30
+        'timeout' => LAAPAK_API_TIMEOUT
     ));
     
-    if (is_wp_error($response)) {
-        error_log("Laapak API: Authentication error - " . $response->get_error_message());
-        return array('success' => false, 'error' => $response->get_error_message());
+    // Check for errors
+    $error = handle_laapak_api_error($response, 'Authentication');
+    if ($error) {
+        return $error;
     }
     
     $status_code = wp_remote_retrieve_response_code($response);
@@ -366,43 +407,22 @@ function authenticate_with_laapak_api($phone, $password) {
     
     if ($status_code === 200) {
         $data = json_decode($body, true);
-        if (isset($data['token']) && isset($data['client'])) {
-            error_log("Laapak API: Client authentication successful");
+        if (isset($data['success']) && $data['success'] && isset($data['client'])) {
+            error_log("Laapak API: Client verification successful");
             
-            // Enhanced token debugging
-            $token = $data['token'];
-            error_log("Laapak API: Token length: " . strlen($token));
-            error_log("Laapak API: Token preview: " . substr($token, 0, 50) . "...");
-            
-            // Check JWT format
-            $token_parts = explode('.', $token);
-            error_log("Laapak API: Token parts count: " . count($token_parts));
-            
-            if (count($token_parts) !== 3) {
-                error_log("Laapak API: WARNING - Token is not a valid JWT format (expected 3 parts, got " . count($token_parts) . ")");
-            } else {
-                error_log("Laapak API: Token appears to be valid JWT format");
-                
-                // Try to decode payload for additional info
-                try {
-                    $payload = json_decode(base64_decode($token_parts[1]), true);
-                    if ($payload && isset($payload['exp'])) {
-                        $expiry = date('Y-m-d H:i:s', $payload['exp']);
-                        error_log("Laapak API: Token expires at: " . $expiry);
-                    }
-                } catch (Exception $e) {
-                    error_log("Laapak API: Could not decode token payload: " . $e->getMessage());
-                }
-            }
+            $client = $data['client'];
+            error_log("Laapak API: Client ID: " . $client['id']);
+            error_log("Laapak API: Client Name: " . $client['name']);
+            error_log("Laapak API: Client Phone: " . $client['phone']);
             
             return array(
                 'success' => true,
-                'token' => $token,
-                'client' => $data['client']
+                'client_id' => $client['id'],
+                'client' => $client
             );
         } else {
-            error_log("Laapak API: Authentication response missing token or client data");
-            return array('success' => false, 'error' => 'Invalid authentication response');
+            error_log("Laapak API: Client verification failed - " . ($data['message'] ?? 'Unknown error'));
+            return array('success' => false, 'error' => $data['message'] ?? 'Client verification failed');
         }
     } else {
         error_log("Laapak API: Authentication HTTP error - " . $status_code);
@@ -412,23 +432,26 @@ function authenticate_with_laapak_api($phone, $password) {
 
 // Check Laapak user via API
 function check_laapak_user_api($phone) {
-    $api_url = 'https://reports.laapak.com/api/external/clients/lookup?phone=' . urlencode($phone);
-    $api_key = 'laapak-api-key-2024';
+    $api_url = LAAPAK_API_BASE_URL . '/clients/bulk-lookup';
     
     // Log API attempt for debugging
     error_log("Laapak API: Attempting to check user with phone: " . $phone);
     
-    $response = wp_remote_get($api_url, array(
+    $response = wp_remote_post($api_url, array(
         'headers' => array(
-            'x-api-key' => $api_key,
+            'x-api-key' => LAAPAK_API_KEY,
             'Content-Type' => 'application/json'
         ),
-        'timeout' => 30
+        'body' => json_encode(array(
+            'phones' => array($phone)
+        )),
+        'timeout' => LAAPAK_API_TIMEOUT
     ));
     
-    if (is_wp_error($response)) {
-        error_log("Laapak API: Error - " . $response->get_error_message());
-        return array('found' => false, 'error' => $response->get_error_message());
+    // Check for errors
+    $error = handle_laapak_api_error($response, 'Client Lookup');
+    if ($error) {
+        return array('found' => false, 'error' => $error['message']);
     }
     
     $status_code = wp_remote_retrieve_response_code($response);
@@ -439,11 +462,11 @@ function check_laapak_user_api($phone) {
     
     if ($status_code === 200) {
         $data = json_decode($body, true);
-        if (isset($data['client'])) {
+        if (isset($data['success']) && $data['success'] && isset($data['clients']) && !empty($data['clients'])) {
             error_log("Laapak API: User found in external system");
             return array(
                 'found' => true,
-                'client' => $data['client']
+                'client' => $data['clients'][0] // Return first client found
             );
         } else {
             error_log("Laapak API: User not found in external system");
@@ -751,6 +774,85 @@ add_action('rest_api_init', function() {
         'permission_callback' => '__return_true'
     ));
     
+    // Debug endpoint to check client ID status
+    register_rest_route('laapak/v1', '/debug/client-id', array(
+        'methods' => 'GET',
+        'callback' => function($request) {
+            if (!is_user_logged_in()) {
+                return new WP_Error('unauthorized', 'User not logged in', array('status' => 401));
+            }
+            
+            $user_id = get_current_user_id();
+            $user_data = get_userdata($user_id);
+            $client_id = get_user_meta($user_id, 'laapak_client_id', true);
+            $client_info = get_user_meta($user_id, 'laapak_client_info', true);
+            $user_phone = get_user_meta($user_id, 'phone', true);
+            
+            return array(
+                'user_id' => $user_id,
+                'username' => $user_data ? $user_data->user_login : 'N/A',
+                'user_phone' => $user_phone,
+                'client_id' => $client_id,
+                'client_info' => $client_info,
+                'has_client_id' => !empty($client_id),
+                'timestamp' => time()
+            );
+        },
+        'permission_callback' => function() {
+            return is_user_logged_in();
+        }
+    ));
+    
+    // API Health Check endpoint
+    register_rest_route('laapak/v1', '/health', array(
+        'methods' => 'GET',
+        'callback' => function($request) {
+            // Test external API connection
+            $api_url = LAAPAK_API_BASE_URL . '/health';
+            
+            $response = wp_remote_get($api_url, array(
+                'headers' => array(
+                    'x-api-key' => LAAPAK_API_KEY,
+                    'Content-Type' => 'application/json'
+                ),
+                'timeout' => 10
+            ));
+            
+            if (is_wp_error($response)) {
+                return array(
+                    'success' => false,
+                    'message' => 'External API connection failed',
+                    'error' => $response->get_error_message(),
+                    'timestamp' => time()
+                );
+            }
+            
+            $status_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            
+            if ($status_code === 200) {
+                $data = json_decode($body, true);
+                return array(
+                    'success' => true,
+                    'message' => 'External API is healthy',
+                    'external_api' => $data,
+                    'timestamp' => time()
+                );
+            } else {
+                return array(
+                    'success' => false,
+                    'message' => 'External API returned error',
+                    'status_code' => $status_code,
+                    'response' => $body,
+                    'timestamp' => time()
+                );
+            }
+        },
+        'permission_callback' => function() {
+            return is_user_logged_in();
+        }
+    ));
+    
     // Custom WooCommerce Orders endpoint (fallback)
     register_rest_route('laapak/v1', '/orders', array(
         'methods' => 'GET',
@@ -805,101 +907,494 @@ add_action('rest_api_init', function() {
         }
     ));
     
-    // Client reports endpoint - Proxy to external API
+    // Client reports endpoint - Get reports by client ID
     register_rest_route('laapak/v1', '/client/reports', array(
         'methods' => 'GET',
         'callback' => function($request) {
-            // Get auth token from request headers (optional for now)
-            $auth_token = $request->get_header('x-auth-token');
+            if (!is_user_logged_in()) {
+                return new WP_Error('unauthorized', 'User not logged in', array('status' => 401));
+            }
             
-            // Make request to external API
-            $response = wp_remote_get('https://reports.laapak.com/api/external/clients/104/reports', array(
+            $user_id = get_current_user_id();
+            $client_id = get_user_meta($user_id, 'laapak_client_id', true);
+            
+            if (empty($client_id)) {
+                error_log("Client Reports API - No client ID found for user: " . $user_id);
+                
+                // Try to get client ID by looking up user's phone number
+                $user_phone = get_user_meta($user_id, 'phone', true);
+                if (empty($user_phone)) {
+                    // Try to get phone from username if it's a phone number
+                    $user_data = get_userdata($user_id);
+                    $user_phone = $user_data ? $user_data->user_login : '';
+                }
+                
+                if (!empty($user_phone)) {
+                    error_log("Client Reports API - Attempting to lookup client ID for phone: " . $user_phone);
+                    
+                    // Try to get client ID from external API
+                    $lookup_result = check_laapak_user_api($user_phone);
+                    if ($lookup_result['found'] && isset($lookup_result['client']['id'])) {
+                        $client_id = $lookup_result['client']['id'];
+                        update_user_meta($user_id, 'laapak_client_id', $client_id);
+                        update_user_meta($user_id, 'laapak_client_info', $lookup_result['client']);
+                        error_log("Client Reports API - Client ID found and stored: " . $client_id);
+                    } else {
+                        error_log("Client Reports API - Client not found in external system for phone: " . $user_phone);
+                        return new WP_Error('no_client_id', 'Client not found in external system. Please contact support.', array('status' => 400));
+                    }
+                } else {
+                    error_log("Client Reports API - No phone number found for user: " . $user_id);
+                    return new WP_Error('no_client_id', 'Client ID not found. Please login again.', array('status' => 400));
+                }
+            }
+            
+            // Get query parameters
+            $status = $request->get_param('status');
+            $limit = $request->get_param('limit') ?: 50;
+            $offset = $request->get_param('offset') ?: 0;
+            $sort_by = $request->get_param('sortBy') ?: 'created_at';
+            $sort_order = $request->get_param('sortOrder') ?: 'DESC';
+            
+            // Build API URL with parameters
+            $api_url = LAAPAK_API_BASE_URL . '/clients/' . $client_id . '/reports';
+            $query_params = array(
+                'limit' => $limit,
+                'offset' => $offset,
+                'sortBy' => $sort_by,
+                'sortOrder' => $sort_order
+            );
+            
+            if ($status) {
+                $query_params['status'] = $status;
+            }
+            
+            $api_url .= '?' . http_build_query($query_params);
+            
+            error_log("Client Reports API - User ID: " . $user_id . ", Client ID: " . $client_id);
+            error_log("Client Reports API - URL: " . $api_url);
+                
+                $response = wp_remote_get($api_url, array(
+                    'headers' => array(
+                    'x-api-key' => LAAPAK_API_KEY,
+                        'Content-Type' => 'application/json'
+                    ),
+                'timeout' => LAAPAK_API_TIMEOUT
+                ));
+                
+                if (is_wp_error($response)) {
+                error_log("Client Reports API - WP Error: " . $response->get_error_message());
+                return new WP_Error('api_error', 'Failed to fetch reports from external API', array('status' => 500));
+                }
+                
+                $status_code = wp_remote_retrieve_response_code($response);
+                $body = wp_remote_retrieve_body($response);
+                
+            error_log("Client Reports API - Response Code: " . $status_code);
+            error_log("Client Reports API - Response Body: " . $body);
+            
+            if ($status_code === 200) {
+                $data = json_decode($body, true);
+                if (isset($data['success']) && $data['success'] && isset($data['reports'])) {
+                    error_log("Client Reports API - Found " . count($data['reports']) . " reports");
+                    return $data['reports'];
+                } else {
+                    error_log("Client Reports API - No reports found or API error");
+                    return array();
+                }
+            } else {
+                error_log("Client Reports API - HTTP error: " . $status_code);
+                return new WP_Error('api_error', 'API request failed with status: ' . $status_code, array('status' => $status_code));
+            }
+        },
+        'permission_callback' => function() {
+            return is_user_logged_in();
+        }
+    ));
+    
+    // Client reports search endpoint - Search by additional terms within user's reports
+    register_rest_route('laapak/v1', '/client/reports/search', array(
+        'methods' => 'GET',
+        'callback' => function($request) {
+            if (!is_user_logged_in()) {
+                return new WP_Error('unauthorized', 'User not logged in', array('status' => 401));
+            }
+            
+            $search_term = $request->get_param('q');
+            if (!$search_term) {
+                return new WP_Error('missing_param', 'Query parameter "q" is required', array('status' => 400));
+            }
+            
+            $user_id = get_current_user_id();
+            $client_id = get_user_meta($user_id, 'laapak_client_id', true);
+            
+            if (empty($client_id)) {
+                error_log("Client Reports Search API - No client ID found for user: " . $user_id);
+                
+                // Try to get client ID by looking up user's phone number
+                $user_phone = get_user_meta($user_id, 'phone', true);
+            if (empty($user_phone)) {
+                    // Try to get phone from username if it's a phone number
+                    $user_data = get_userdata($user_id);
+                    $user_phone = $user_data ? $user_data->user_login : '';
+                }
+                
+                if (!empty($user_phone)) {
+                    error_log("Client Reports Search API - Attempting to lookup client ID for phone: " . $user_phone);
+                    
+                    // Try to get client ID from external API
+                    $lookup_result = check_laapak_user_api($user_phone);
+                    if ($lookup_result['found'] && isset($lookup_result['client']['id'])) {
+                        $client_id = $lookup_result['client']['id'];
+                        update_user_meta($user_id, 'laapak_client_id', $client_id);
+                        update_user_meta($user_id, 'laapak_client_info', $lookup_result['client']);
+                        error_log("Client Reports Search API - Client ID found and stored: " . $client_id);
+                    } else {
+                        error_log("Client Reports Search API - Client not found in external system for phone: " . $user_phone);
+                        return new WP_Error('no_client_id', 'Client not found in external system. Please contact support.', array('status' => 400));
+                    }
+                } else {
+                    error_log("Client Reports Search API - No phone number found for user: " . $user_id);
+                    return new WP_Error('no_client_id', 'Client ID not found. Please login again.', array('status' => 400));
+                }
+            }
+            
+            // Get all reports first, then filter by search term
+            $api_url = LAAPAK_API_BASE_URL . '/clients/' . $client_id . '/reports';
+            $response = wp_remote_get($api_url, array(
                 'headers' => array(
-                    'x-api-key' => 'laapak-api-key-2024',
+                    'x-api-key' => LAAPAK_API_KEY,
                     'Content-Type' => 'application/json'
                 ),
-                'timeout' => 30
+                'timeout' => LAAPAK_API_TIMEOUT
             ));
             
             if (is_wp_error($response)) {
-                return new WP_Error('api_error', 'Failed to fetch data from external API', array('status' => 500));
+                return new WP_Error('api_error', 'Failed to search reports from external API', array('status' => 500));
             }
             
+            $status_code = wp_remote_retrieve_response_code($response);
             $body = wp_remote_retrieve_body($response);
-            return json_decode($body, true);
+            
+            if ($status_code === 200) {
+                $data = json_decode($body, true);
+                if (isset($data['success']) && $data['success'] && isset($data['reports'])) {
+                    // Filter reports by search term
+                    $filtered_reports = array();
+                    $search_lower = strtolower($search_term);
+                    
+                    foreach ($data['reports'] as $report) {
+                        $searchable_fields = array(
+                            $report['device_model'] ?? '',
+                            $report['serial_number'] ?? '',
+                            $report['order_number'] ?? '',
+                            $report['client_name'] ?? '',
+                            $report['status'] ?? ''
+                        );
+                        
+                        $searchable_text = strtolower(implode(' ', $searchable_fields));
+                        
+                        if (strpos($searchable_text, $search_lower) !== false) {
+                            $filtered_reports[] = $report;
+                        }
+                    }
+                    
+                    return $filtered_reports;
+                }
+            }
+            
+            return array();
         },
-        'permission_callback' => '__return_true' // We handle auth in the callback
+        'permission_callback' => function() {
+            return is_user_logged_in();
+        }
     ));
     
-    // Client invoices endpoint - Proxy to external API
+    // Client invoices endpoint - Get invoices by client ID
     register_rest_route('laapak/v1', '/client/invoices', array(
         'methods' => 'GET',
         'callback' => function($request) {
-            $auth_token = $request->get_header('x-auth-token');
+            if (!is_user_logged_in()) {
+                return new WP_Error('unauthorized', 'User not logged in', array('status' => 401));
+            }
             
-            $response = wp_remote_get('https://reports.laapak.com/api/external/clients/104/invoices', array(
+            $user_id = get_current_user_id();
+            $client_id = get_user_meta($user_id, 'laapak_client_id', true);
+            
+            if (empty($client_id)) {
+                error_log("Client Invoices API - No client ID found for user: " . $user_id);
+                
+                // Try to get client ID by looking up user's phone number
+                $user_phone = get_user_meta($user_id, 'phone', true);
+            if (empty($user_phone)) {
+                    // Try to get phone from username if it's a phone number
+                    $user_data = get_userdata($user_id);
+                    $user_phone = $user_data ? $user_data->user_login : '';
+                }
+                
+                if (!empty($user_phone)) {
+                    error_log("Client Invoices API - Attempting to lookup client ID for phone: " . $user_phone);
+                    
+                    // Try to get client ID from external API
+                    $lookup_result = check_laapak_user_api($user_phone);
+                    if ($lookup_result['found'] && isset($lookup_result['client']['id'])) {
+                        $client_id = $lookup_result['client']['id'];
+                        update_user_meta($user_id, 'laapak_client_id', $client_id);
+                        update_user_meta($user_id, 'laapak_client_info', $lookup_result['client']);
+                        error_log("Client Invoices API - Client ID found and stored: " . $client_id);
+                    } else {
+                        error_log("Client Invoices API - Client not found in external system for phone: " . $user_phone);
+                        return new WP_Error('no_client_id', 'Client not found in external system. Please contact support.', array('status' => 400));
+                    }
+                } else {
+                    error_log("Client Invoices API - No phone number found for user: " . $user_id);
+                    return new WP_Error('no_client_id', 'Client ID not found. Please login again.', array('status' => 400));
+                }
+            }
+            
+            // Get query parameters
+            $payment_status = $request->get_param('paymentStatus');
+            $limit = $request->get_param('limit') ?: 50;
+            $offset = $request->get_param('offset') ?: 0;
+            $start_date = $request->get_param('startDate');
+            $end_date = $request->get_param('endDate');
+            
+            // Build API URL with parameters
+            $api_url = LAAPAK_API_BASE_URL . '/clients/' . $client_id . '/invoices';
+            $query_params = array(
+                'limit' => $limit,
+                'offset' => $offset
+            );
+            
+            if ($payment_status) {
+                $query_params['paymentStatus'] = $payment_status;
+            }
+            if ($start_date) {
+                $query_params['startDate'] = $start_date;
+            }
+            if ($end_date) {
+                $query_params['endDate'] = $end_date;
+            }
+            
+            $api_url .= '?' . http_build_query($query_params);
+            
+            error_log("Client Invoices API - User ID: " . $user_id . ", Client ID: " . $client_id);
+            error_log("Client Invoices API - URL: " . $api_url);
+            
+            $response = wp_remote_get($api_url, array(
                 'headers' => array(
-                    'x-api-key' => 'laapak-api-key-2024',
+                    'x-api-key' => LAAPAK_API_KEY,
                     'Content-Type' => 'application/json'
                 ),
-                'timeout' => 30
+                'timeout' => LAAPAK_API_TIMEOUT
             ));
             
             if (is_wp_error($response)) {
-                return new WP_Error('api_error', 'Failed to fetch data from external API', array('status' => 500));
+                error_log("Client Invoices API - WP Error: " . $response->get_error_message());
+                return new WP_Error('api_error', 'Failed to fetch invoices from external API', array('status' => 500));
             }
             
+            $status_code = wp_remote_retrieve_response_code($response);
             $body = wp_remote_retrieve_body($response);
-            return json_decode($body, true);
+            
+            error_log("Client Invoices API - Response Code: " . $status_code);
+            error_log("Client Invoices API - Response Body: " . $body);
+            
+            if ($status_code === 200) {
+                $data = json_decode($body, true);
+                if (isset($data['success']) && $data['success'] && isset($data['invoices'])) {
+                    error_log("Client Invoices API - Found " . count($data['invoices']) . " invoices");
+                    return $data['invoices'];
+                } else {
+                    error_log("Client Invoices API - No invoices found or API error");
+                    return array();
+                }
+            } else {
+                error_log("Client Invoices API - HTTP error: " . $status_code);
+                return new WP_Error('api_error', 'API request failed with status: ' . $status_code, array('status' => $status_code));
+            }
         },
-        'permission_callback' => '__return_true'
+        'permission_callback' => function() {
+            return is_user_logged_in();
+        }
     ));
     
-    // Client warranty endpoint - Proxy to external API
+    // Client warranty endpoint - Get warranty info by client ID
     register_rest_route('laapak/v1', '/client/warranty', array(
         'methods' => 'GET',
         'callback' => function($request) {
-            $auth_token = $request->get_header('x-auth-token');
+            if (!is_user_logged_in()) {
+                return new WP_Error('unauthorized', 'User not logged in', array('status' => 401));
+            }
             
-            $response = wp_remote_get('https://reports.laapak.com/api/external/clients/104/warranty', array(
+            $user_id = get_current_user_id();
+            $client_id = get_user_meta($user_id, 'laapak_client_id', true);
+            
+            if (empty($client_id)) {
+                error_log("Client Warranty API - No client ID found for user: " . $user_id);
+                
+                // Try to get client ID by looking up user's phone number
+                $user_phone = get_user_meta($user_id, 'phone', true);
+            if (empty($user_phone)) {
+                    // Try to get phone from username if it's a phone number
+                    $user_data = get_userdata($user_id);
+                    $user_phone = $user_data ? $user_data->user_login : '';
+                }
+                
+                if (!empty($user_phone)) {
+                    error_log("Client Warranty API - Attempting to lookup client ID for phone: " . $user_phone);
+                    
+                    // Try to get client ID from external API
+                    $lookup_result = check_laapak_user_api($user_phone);
+                    if ($lookup_result['found'] && isset($lookup_result['client']['id'])) {
+                        $client_id = $lookup_result['client']['id'];
+                        update_user_meta($user_id, 'laapak_client_id', $client_id);
+                        update_user_meta($user_id, 'laapak_client_info', $lookup_result['client']);
+                        error_log("Client Warranty API - Client ID found and stored: " . $client_id);
+                    } else {
+                        error_log("Client Warranty API - Client not found in external system for phone: " . $user_phone);
+                        return new WP_Error('no_client_id', 'Client not found in external system. Please contact support.', array('status' => 400));
+                    }
+                } else {
+                    error_log("Client Warranty API - No phone number found for user: " . $user_id);
+                    return new WP_Error('no_client_id', 'Client ID not found. Please login again.', array('status' => 400));
+                }
+            }
+            
+            // Get reports with warranty information
+            $api_url = LAAPAK_API_BASE_URL . '/clients/' . $client_id . '/reports?status=active';
+            
+            $response = wp_remote_get($api_url, array(
                 'headers' => array(
-                    'x-api-key' => 'laapak-api-key-2024',
+                    'x-api-key' => LAAPAK_API_KEY,
                     'Content-Type' => 'application/json'
                 ),
-                'timeout' => 30
+                'timeout' => LAAPAK_API_TIMEOUT
             ));
             
             if (is_wp_error($response)) {
-                return new WP_Error('api_error', 'Failed to fetch data from external API', array('status' => 500));
+                return new WP_Error('api_error', 'Failed to fetch warranty from external API', array('status' => 500));
             }
             
+            $status_code = wp_remote_retrieve_response_code($response);
             $body = wp_remote_retrieve_body($response);
-            return json_decode($body, true);
+            
+            if ($status_code === 200) {
+                $data = json_decode($body, true);
+                if (isset($data['success']) && $data['success'] && isset($data['reports'])) {
+                    // Process warranty information from reports
+                    $warranty_info = array();
+                    foreach ($data['reports'] as $report) {
+                        if (isset($report['billing_enabled']) && $report['billing_enabled']) {
+                            $warranty_info[] = array(
+                                'report_id' => $report['id'],
+                                'device_model' => $report['device_model'],
+                                'serial_number' => $report['serial_number'],
+                                'inspection_date' => $report['inspection_date'],
+                                'warranty_status' => 'active',
+                                'warranty_expires' => date('Y-m-d', strtotime($report['inspection_date'] . ' +6 months'))
+                            );
+                        }
+                    }
+                    return $warranty_info;
+                }
+            }
+            
+            return array();
         },
-        'permission_callback' => '__return_true'
+        'permission_callback' => function() {
+            return is_user_logged_in();
+        }
     ));
     
-    // Client maintenance endpoint - Proxy to external API
+    // Client maintenance endpoint - Get maintenance info by client ID
     register_rest_route('laapak/v1', '/client/maintenance', array(
         'methods' => 'GET',
         'callback' => function($request) {
-            $auth_token = $request->get_header('x-auth-token');
+            if (!is_user_logged_in()) {
+                return new WP_Error('unauthorized', 'User not logged in', array('status' => 401));
+            }
             
-            $response = wp_remote_get('https://reports.laapak.com/api/external/clients/104/maintenance', array(
+            $user_id = get_current_user_id();
+            $client_id = get_user_meta($user_id, 'laapak_client_id', true);
+            
+            if (empty($client_id)) {
+                error_log("Client Maintenance API - No client ID found for user: " . $user_id);
+                
+                // Try to get client ID by looking up user's phone number
+                $user_phone = get_user_meta($user_id, 'phone', true);
+            if (empty($user_phone)) {
+                    // Try to get phone from username if it's a phone number
+                    $user_data = get_userdata($user_id);
+                    $user_phone = $user_data ? $user_data->user_login : '';
+                }
+                
+                if (!empty($user_phone)) {
+                    error_log("Client Maintenance API - Attempting to lookup client ID for phone: " . $user_phone);
+                    
+                    // Try to get client ID from external API
+                    $lookup_result = check_laapak_user_api($user_phone);
+                    if ($lookup_result['found'] && isset($lookup_result['client']['id'])) {
+                        $client_id = $lookup_result['client']['id'];
+                        update_user_meta($user_id, 'laapak_client_id', $client_id);
+                        update_user_meta($user_id, 'laapak_client_info', $lookup_result['client']);
+                        error_log("Client Maintenance API - Client ID found and stored: " . $client_id);
+                    } else {
+                        error_log("Client Maintenance API - Client not found in external system for phone: " . $user_phone);
+                        return new WP_Error('no_client_id', 'Client not found in external system. Please contact support.', array('status' => 400));
+                    }
+                } else {
+                    error_log("Client Maintenance API - No phone number found for user: " . $user_id);
+                    return new WP_Error('no_client_id', 'Client ID not found. Please login again.', array('status' => 400));
+                }
+            }
+            
+            // Get reports with maintenance information
+            $api_url = LAAPAK_API_BASE_URL . '/clients/' . $client_id . '/reports?status=active';
+            
+            $response = wp_remote_get($api_url, array(
                 'headers' => array(
-                    'x-api-key' => 'laapak-api-key-2024',
+                    'x-api-key' => LAAPAK_API_KEY,
                     'Content-Type' => 'application/json'
                 ),
-                'timeout' => 30
+                'timeout' => LAAPAK_API_TIMEOUT
             ));
             
             if (is_wp_error($response)) {
-                return new WP_Error('api_error', 'Failed to fetch data from external API', array('status' => 500));
+                return new WP_Error('api_error', 'Failed to fetch maintenance from external API', array('status' => 500));
             }
             
+            $status_code = wp_remote_retrieve_response_code($response);
             $body = wp_remote_retrieve_body($response);
-            return json_decode($body, true);
+            
+            if ($status_code === 200) {
+                $data = json_decode($body, true);
+                if (isset($data['success']) && $data['success'] && isset($data['reports'])) {
+                    // Process maintenance information from reports
+                    $maintenance_info = array();
+                    foreach ($data['reports'] as $report) {
+                        if (isset($report['billing_enabled']) && $report['billing_enabled']) {
+                            $inspection_date = $report['inspection_date'];
+                            $next_maintenance = date('Y-m-d', strtotime($inspection_date . ' +6 months'));
+                            
+                            $maintenance_info[] = array(
+                                'report_id' => $report['id'],
+                                'device_model' => $report['device_model'],
+                                'serial_number' => $report['serial_number'],
+                                'last_inspection' => $inspection_date,
+                                'next_maintenance' => $next_maintenance,
+                                'maintenance_status' => strtotime($next_maintenance) > time() ? 'scheduled' : 'due'
+                            );
+                        }
+                    }
+                    return $maintenance_info;
+                }
+            }
+            
+            return array();
         },
-        'permission_callback' => '__return_true'
+        'permission_callback' => function() {
+            return is_user_logged_in();
+        }
     ));
 });

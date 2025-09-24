@@ -140,65 +140,37 @@ class ApiService {
     // Client-specific API methods for enhanced account page
     async getClientReports() {
         try {
-            console.log('🔍 [DEBUG] Fetching client reports from external API...');
-            console.log('🔍 [DEBUG] API Base URL:', this.baseUrl);
-            console.log('🔍 [DEBUG] Auth Token:', this.authToken ? 'Present' : 'Missing');
-            console.log('🔍 [DEBUG] Full URL:', `${this.baseUrl}/clients/104/reports`);
+            console.log('🔍 [DEBUG] Fetching client reports from WordPress API...');
             
-            const response = await this.request('/clients/104/reports');
-            console.log('✅ [DEBUG] Client reports response:', response);
-            console.log('✅ [DEBUG] Response success:', response.success);
-            console.log('✅ [DEBUG] Response reports length:', response.reports ? response.reports.length : 'No reports');
+            // Use WordPress custom endpoint instead of direct API
+            const response = await fetch('/wp-json/laapak/v1/client/reports', {
+                method: 'GET',
+                headers: {
+                    'X-WP-Nonce': document.querySelector('meta[name="wp-nonce"]')?.content || '',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            });
             
-            // Handle server errors gracefully
-            if (response.error && (response.error.includes('Unknown column') || response.error.includes('createdAt') || response.error.includes('field list'))) {
-                console.warn('⚠️ [DEBUG] Database column error detected, using fallback data');
-                return {
-                    success: true,
-                    reports: [
-                        {
-                            id: 'RPT104001',
-                            title: 'تقرير فحص الجهاز',
-                            device_model: 'iPhone 15',
-                            serial_number: 'ABC123',
-                            inspection_date: new Date().toISOString(),
-                            warranty_status: 'active',
-                            client_name: 'أحمد داوود',
-                            order_number: 'ORD123456',
-                            hardware_status: 'جيد',
-                            notes: 'فحص شامل للجهاز',
-                            amount: '150.00',
-                            created_at: new Date().toISOString()
-                        }
-                    ]
-                };
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
             
-            // Handle the actual database response format
-            if (response.success && response.reports) {
-                // Map database fields to display format
-                const mappedReports = response.reports.map(report => ({
-                    id: report.id,
-                    title: `تقرير فحص ${report.device_model}`,
-                    device_model: report.device_model,
-                    serial_number: report.serial_number,
-                    inspection_date: report.inspection_date,
-                    warranty_status: report.status,
-                    client_name: report.client_name,
-                    order_number: report.order_number,
-                    hardware_status: report.hardware_status,
-                    notes: report.notes,
-                    amount: report.amount,
-                    created_at: report.created_at || report.createdAt || new Date().toISOString()
-                }));
-                
-                return {
-                    success: true,
-                    reports: mappedReports
-                };
+            const reports = await response.json();
+            console.log('✅ [DEBUG] Client reports response:', reports);
+            
+            // Handle error responses
+            if (reports.error) {
+                console.error('❌ [DEBUG] API Error:', reports.error);
+                return { success: false, reports: [], error: reports.error };
             }
             
-            return response;
+            // Return reports in expected format
+            return {
+                success: true,
+                reports: Array.isArray(reports) ? reports : []
+            };
         } catch (error) {
             console.error('❌ [DEBUG] Error fetching client reports:', error);
             console.error('❌ [DEBUG] Error details:', {
@@ -212,62 +184,37 @@ class ApiService {
     
     async getClientInvoices() {
         try {
-            console.log('🔍 [DEBUG] Fetching client invoices from external API...');
-            console.log('🔍 [DEBUG] Full URL:', `${this.baseUrl}/clients/104/invoices`);
-            const response = await this.request('/clients/104/invoices');
-            console.log('✅ [DEBUG] Client invoices response:', response);
-            console.log('✅ [DEBUG] Response success:', response.success);
-            console.log('✅ [DEBUG] Response invoices length:', response.invoices ? response.invoices.length : 'No invoices');
+            console.log('🔍 [DEBUG] Fetching client invoices from WordPress API...');
             
-            // Handle server errors gracefully
-            if (response.error && (response.error.includes('Unknown column') || response.error.includes('createdAt') || response.error.includes('field list'))) {
-                console.warn('⚠️ [DEBUG] Database column error detected, using fallback data');
-                return {
-                    success: true,
-                    invoices: [
-                        {
-                            id: 'INV104001',
-                            description: 'فاتورة خدمة الفحص',
-                            date: new Date().toISOString(),
-                            total: '150.00',
-                            subtotal: '131.58',
-                            discount: '0.00',
-                            tax: '18.42',
-                            taxRate: '14.00',
-                            paymentStatus: 'paid',
-                            paymentMethod: 'نقدي',
-                            paymentDate: new Date().toISOString(),
-                            created_at: new Date().toISOString()
-                        }
-                    ]
-                };
+            // Use WordPress custom endpoint instead of direct API
+            const response = await fetch('/wp-json/laapak/v1/client/invoices', {
+                method: 'GET',
+                headers: {
+                    'X-WP-Nonce': document.querySelector('meta[name="wp-nonce"]')?.content || '',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
             
-            // Handle the actual database response format
-            if (response.success && response.invoices) {
-                // Map database fields to display format
-                const mappedInvoices = response.invoices.map(invoice => ({
-                    id: invoice.id,
-                    description: `فاتورة ${invoice.reportId || 'غير محدد'}`,
-                    date: invoice.date,
-                    total: invoice.total,
-                    subtotal: invoice.subtotal,
-                    discount: invoice.discount,
-                    tax: invoice.tax,
-                    taxRate: invoice.taxRate,
-                    paymentStatus: invoice.paymentStatus,
-                    paymentMethod: invoice.paymentMethod,
-                    paymentDate: invoice.paymentDate,
-                    created_at: invoice.created_at || invoice.createdAt || new Date().toISOString()
-                }));
-                
-                return {
-                    success: true,
-                    invoices: mappedInvoices
-                };
+            const invoices = await response.json();
+            console.log('✅ [DEBUG] Client invoices response:', invoices);
+            
+            // Handle error responses
+            if (invoices.error) {
+                console.error('❌ [DEBUG] API Error:', invoices.error);
+                return { success: false, invoices: [], error: invoices.error };
             }
             
-            return response;
+            // Return invoices in expected format
+            return {
+                success: true,
+                invoices: Array.isArray(invoices) ? invoices : []
+            };
         } catch (error) {
             console.error('❌ [DEBUG] Error fetching client invoices:', error);
             console.error('❌ [DEBUG] Error details:', {
@@ -281,32 +228,37 @@ class ApiService {
     
     async getWarrantyInfo() {
         try {
-            console.log('🔍 [DEBUG] Fetching warranty info from external API...');
-            console.log('🔍 [DEBUG] Full URL:', `${this.baseUrl}/clients/104/warranty`);
-            // Since there's no warranty table, we'll create warranty info based on reports
-            const reportsResponse = await this.request('/clients/104/reports');
-            console.log('✅ [DEBUG] Reports response for warranty:', reportsResponse);
+            console.log('🔍 [DEBUG] Fetching warranty info from WordPress API...');
             
-            if (reportsResponse.success && reportsResponse.reports) {
-                // Create warranty entries based on reports
-                const warrantyEntries = reportsResponse.reports.map(report => ({
-                    id: `WAR-${report.id}`,
-                    type: 'ضمان عيوب الصناعة',
-                    device_name: report.device_model,
-                    start_date: report.inspection_date,
-                    end_date: new Date(new Date(report.inspection_date).getTime() + (6 * 30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0], // 6 months from inspection
-                    status: report.status === 'completed' ? 'active' : 'pending',
-                    serial_number: report.serial_number,
-                    created_at: report.created_at
-                }));
-                
-                return {
-                    success: true,
-                    warranty: warrantyEntries
-                };
+            // Use WordPress custom endpoint instead of direct API
+            const response = await fetch('/wp-json/laapak/v1/client/warranty', {
+                method: 'GET',
+                headers: {
+                    'X-WP-Nonce': document.querySelector('meta[name="wp-nonce"]')?.content || '',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
             
-            return { success: false, warranty: [] };
+            const warranty = await response.json();
+            console.log('✅ [DEBUG] Client warranty response:', warranty);
+            
+            // Handle error responses
+            if (warranty.error) {
+                console.error('❌ [DEBUG] API Error:', warranty.error);
+                return { success: false, warranty: [], error: warranty.error };
+            }
+            
+            // Return warranty in expected format
+            return {
+                success: true,
+                warranty: Array.isArray(warranty) ? warranty : []
+            };
         } catch (error) {
             console.error('❌ [DEBUG] Error fetching warranty info:', error);
             console.error('❌ [DEBUG] Error details:', {
@@ -320,32 +272,37 @@ class ApiService {
     
     async getMaintenanceSchedules() {
         try {
-            console.log('🔍 [DEBUG] Fetching maintenance schedules from external API...');
-            console.log('🔍 [DEBUG] Full URL:', `${this.baseUrl}/clients/104/maintenance`);
-            // Since there's no maintenance table, we'll create maintenance schedules based on reports
-            const reportsResponse = await this.request('/clients/104/reports');
-            console.log('✅ [DEBUG] Reports response for maintenance:', reportsResponse);
+            console.log('🔍 [DEBUG] Fetching maintenance schedules from WordPress API...');
             
-            if (reportsResponse.success && reportsResponse.reports) {
-                // Create maintenance entries based on reports
-                const maintenanceEntries = reportsResponse.reports.map(report => ({
-                    id: `MAINT-${report.id}`,
-                    type: 'صيانة دورية',
-                    device_name: report.device_model,
-                    scheduled_date: new Date(new Date(report.inspection_date).getTime() + (3 * 30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0], // 3 months from inspection
-                    status: 'scheduled',
-                    serial_number: report.serial_number,
-                    notes: 'صيانة دورية مجدولة',
-                    created_at: report.created_at
-                }));
-                
-                return {
-                    success: true,
-                    maintenance: maintenanceEntries
-                };
+            // Use WordPress custom endpoint instead of direct API
+            const response = await fetch('/wp-json/laapak/v1/client/maintenance', {
+                method: 'GET',
+                headers: {
+                    'X-WP-Nonce': document.querySelector('meta[name="wp-nonce"]')?.content || '',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
             
-            return { success: false, maintenance: [] };
+            const maintenance = await response.json();
+            console.log('✅ [DEBUG] Client maintenance response:', maintenance);
+            
+            // Handle error responses
+            if (maintenance.error) {
+                console.error('❌ [DEBUG] API Error:', maintenance.error);
+                return { success: false, maintenance: [], error: maintenance.error };
+            }
+            
+            // Return maintenance in expected format
+            return {
+                success: true,
+                maintenance: Array.isArray(maintenance) ? maintenance : []
+            };
         } catch (error) {
             console.error('❌ [DEBUG] Error fetching maintenance schedules:', error);
             console.error('❌ [DEBUG] Error details:', {
